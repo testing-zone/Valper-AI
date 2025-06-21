@@ -1,24 +1,51 @@
 # 🛠️ Setup Guide - Valper AI Assistant
 
-Esta guía te ayudará a configurar y ejecutar Valper AI Assistant en tu sistema.
+Esta guía te ayudará a configurar y ejecutar Valper AI Assistant en tu sistema con Python 3.11+ y soporte GPU optimizado.
 
 ## 📋 Prerrequisitos
 
 ### Sistema Operativo
 - **macOS** (probado en 10.15+)
-- **Linux** (Ubuntu 18.04+, Debian 10+)
+- **Linux** (Ubuntu 20.04+, Debian 11+)
 - **Windows** (WSL2 recomendado)
 
 ### Software Requerido
-- **Python 3.8+** ([descargar](https://www.python.org/downloads/))
+- **Python 3.11+** 🚨 **REQUERIDO** ([descargar](https://www.python.org/downloads/))
 - **Node.js 16+** ([descargar](https://nodejs.org/))
 - **Git** ([descargar](https://git-scm.com/downloads))
 
 ### Hardware Recomendado
 - **RAM**: 8GB mínimo (16GB recomendado)
-- **Almacenamiento**: 2GB libres para modelos
-- **GPU**: NVIDIA GPU opcional (acelera TTS)
+- **Almacenamiento**: 3GB libres para modelos y entorno
+- **GPU**: NVIDIA GPU con CUDA 11.8+ (opcional pero recomendado)
 - **Micrófono**: Para funcionalidad de voz
+
+### Instalación de Python 3.11+
+
+#### macOS
+```bash
+# Con Homebrew
+brew install python@3.11
+
+# O descargar desde python.org
+# https://www.python.org/downloads/
+```
+
+#### Ubuntu/Debian
+```bash
+# Ubuntu 22.04+ o Debian 12+
+sudo apt update
+sudo apt install python3.11 python3.11-venv python3.11-dev
+
+# Para versiones anteriores, usar deadsnakes PPA
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.11 python3.11-venv python3.11-dev
+```
+
+#### Windows
+- Descargar desde [python.org](https://www.python.org/downloads/)
+- O usar WSL2 con Ubuntu 22.04+
 
 ## 🚀 Instalación Rápida
 
@@ -29,41 +56,97 @@ git clone https://github.com/tu-usuario/valper-ai.git
 cd valper-ai
 ```
 
-### 2. Configuración Automática
+### 2. Configuración Automática con Entorno Aislado
 
 ```bash
 # Hacer ejecutables los scripts
 chmod +x scripts/*.sh
 
-# Configurar entorno Python
+# Configurar entorno Python 3.11+ con detección automática de GPU
 ./scripts/setup_environment.sh
+```
 
+**Este script hará automáticamente:**
+- ✅ Verificar Python 3.11+
+- ✅ Crear entorno virtual aislado
+- ✅ Detectar y configurar GPU (CUDA) si está disponible
+- ✅ Instalar PyTorch con soporte CUDA apropiado
+- ✅ Instalar todas las dependencias optimizadas
+- ✅ Crear archivo de configuración `.env`
+- ✅ Configurar script de activación personalizado
+
+### 3. Descargar Modelos de IA
+
+```bash
 # Descargar modelos de IA (puede tomar varios minutos)
 ./scripts/setup_models.sh
 ```
 
-### 3. Iniciar la Aplicación
+### 4. Iniciar la Aplicación
 
 ```bash
+# Activar entorno (cada vez que abras una nueva terminal)
+source ./activate_valper.sh
+
 # Terminal 1: Backend
 ./scripts/start_backend.sh
 
 # Terminal 2: Frontend (nueva terminal)
+source ./activate_valper.sh  # Activar entorno también aquí
 ./scripts/start_frontend.sh
 ```
 
-### 4. Verificar Instalación
+### 5. Verificar Instalación
 
 1. Abre http://localhost:3000
 2. Verifica que los chips de estado muestren "Ready"
 3. Prueba el botón "Test TTS"
 4. Graba un mensaje de voz
 
-## 🐳 Instalación con Docker
+## 🎮 Optimización GPU
+
+El script detecta automáticamente tu GPU y configura:
+
+### NVIDIA GPU Detectada
+- ✅ PyTorch con CUDA 11.8
+- ✅ Librerías de aceleración GPU
+- ✅ Configuración optimizada para tu tarjeta
+
+### CPU Solamente
+- ✅ PyTorch optimizado para CPU
+- ✅ Configuración eficiente sin GPU
+
+### Verificar GPU
+```bash
+# Activar entorno
+source ./activate_valper.sh
+
+# El script mostrará automáticamente el estado de tu GPU
+# También puedes verificar manualmente:
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+## 🔄 Activación del Entorno
+
+### Primera vez (después del setup)
+```bash
+source ./activate_valper.sh
+```
+
+### Script de activación personalizado
+El script `activate_valper.sh` te muestra:
+- ✅ Estado del entorno Python
+- ✅ Información de GPU/CUDA
+- ✅ Estado de modelos descargados
+- ✅ Estado de servicios corriendo
+- ✅ Comandos disponibles
+
+## 🐳 Instalación con Docker (Alternativa)
 
 ### Prerrequisitos Docker
 - Docker Engine 20.10+
 - Docker Compose V2
+- NVIDIA Docker (para soporte GPU)
 
 ### Ejecutar con Docker
 
@@ -85,14 +168,13 @@ docker-compose up -d --build
 - **Backend API**: http://localhost:8000
 - **Documentación**: http://localhost:8000/docs
 
-## 🔧 Configuración Detallada
+## 🔧 Configuración Avanzada
 
 ### Variables de Entorno
 
-```bash
-# Copiar archivo de ejemplo
-cp .env.example .env
+El archivo `.env` se crea automáticamente, pero puedes editarlo:
 
+```bash
 # Editar configuración
 nano .env
 ```
@@ -103,41 +185,20 @@ Principales configuraciones:
 - `DEBUG`: Modo debug (default: false)
 - `LOG_LEVEL`: Nivel de logs (INFO, DEBUG, ERROR)
 
-### Configuración de GPU (Opcional)
+### Configuración Manual de GPU
 
-Para acelerar el procesamiento con GPU NVIDIA:
+Si el script no detecta tu GPU correctamente:
 
 ```bash
-# Instalar CUDA toolkit
-sudo apt install nvidia-cuda-toolkit
+# Activar entorno
+source ./activate_valper.sh
 
-# Verificar instalación
+# Verificar CUDA
 nvidia-smi
 
-# Reinstalar PyTorch con soporte CUDA
-source venv/bin/activate
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-### Configuración de Audio
-
-#### macOS
-```bash
-# Instalar dependencias con Homebrew
-brew install portaudio espeak-ng
-```
-
-#### Ubuntu/Debian
-```bash
-# Instalar dependencias del sistema
-sudo apt-get update
-sudo apt-get install portaudio19-dev espeak-ng
-```
-
-#### Windows (WSL2)
-```bash
-# En WSL2 Ubuntu
-sudo apt-get install portaudio19-dev espeak-ng
+# Reinstalar PyTorch con CUDA específico
+pip uninstall torch torchaudio
+pip install torch==2.1.0+cu118 torchaudio==2.1.0+cu118 --index-url https://download.pytorch.org/whl/cu118
 ```
 
 ## 🧪 Verificación de la Instalación
@@ -145,6 +206,9 @@ sudo apt-get install portaudio19-dev espeak-ng
 ### Scripts de Verificación
 
 ```bash
+# Activar entorno
+source ./activate_valper.sh
+
 # Verificar servicios del backend
 curl http://localhost:8000/health
 
@@ -159,128 +223,94 @@ curl -X POST "http://localhost:8000/api/v1/stt" \
 
 ### Checklist de Verificación
 
-- [ ] Python 3.8+ instalado (`python3 --version`)
-- [ ] Node.js 16+ instalado (`node --version`)
-- [ ] Entorno virtual creado (`ls venv/`)
-- [ ] Dependencias Python instaladas (`pip list | grep fastapi`)
+- [ ] Python 3.11+ instalado (`python --version`)
+- [ ] Entorno virtual aislado creado (`ls venv/`)
+- [ ] GPU detectada correctamente (si disponible)
+- [ ] PyTorch con CUDA funcionando (`python -c "import torch; print(torch.cuda.is_available())"`)
+- [ ] Dependencias instaladas (`pip list | grep fastapi`)
 - [ ] Modelos descargados (`ls models/`)
 - [ ] Backend funcionando (`curl localhost:8000/health`)
 - [ ] Frontend funcionando (`curl localhost:3000`)
 - [ ] Micrófono accesible (permisos del navegador)
-- [ ] Audio de prueba funciona
 
 ## 🚨 Solución de Problemas
 
-### Problemas Comunes
-
-#### Error: "Command not found"
+### Error: Python 3.11+ no encontrado
 ```bash
-# Verificar PATH
-echo $PATH
+# macOS
+brew install python@3.11
 
-# Reinstalar herramientas
+# Ubuntu/Debian
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.11 python3.11-venv python3.11-dev
+
+# Verificar instalación
+python3.11 --version
+```
+
+### Error: GPU no detectada
+```bash
+# Verificar drivers NVIDIA
+nvidia-smi
+
+# Reinstalar CUDA toolkit si es necesario
+sudo apt install nvidia-cuda-toolkit
+
+# Reejecutar setup
 ./scripts/setup_environment.sh
 ```
 
-#### Error: "Permission denied"
+### Error: Conflictos con otros proyectos
 ```bash
-# Dar permisos a scripts
-chmod +x scripts/*.sh
+# El entorno está completamente aislado, pero si hay problemas:
+rm -rf venv
+./scripts/setup_environment.sh
+```
 
-# Verificar propiedad de archivos
+### Error: "Permission denied"
+```bash
+# Dar permisos a todos los scripts
+chmod +x scripts/*.sh activate_valper.sh
+
+# Verificar propiedad
 ls -la scripts/
-```
-
-#### Error: "Port already in use"
-```bash
-# Encontrar proceso usando el puerto
-lsof -i :8000
-lsof -i :3000
-
-# Terminar proceso
-kill -9 [PID]
-```
-
-#### Error: "Model file not found"
-```bash
-# Re-descargar modelos
-rm -rf models/
-./scripts/setup_models.sh
-```
-
-#### Error: "Module not found"
-```bash
-# Activar entorno virtual
-source venv/bin/activate
-
-# Reinstalar dependencias
-pip install -r backend/requirements.txt
-```
-
-#### Error de Audio/Micrófono
-```bash
-# Verificar dispositivos de audio (Linux)
-arecord -l
-
-# Probar grabación
-arecord -d 3 test.wav
-
-# Verificar permisos (navegador)
-# Chrome: chrome://settings/content/microphone
 ```
 
 ### Logs de Depuración
 
 ```bash
-# Logs del backend
+# Ver logs del backend
 tail -f logs/valper.log
 
-# Logs con más detalle
-export LOG_LEVEL=DEBUG
-./scripts/start_backend.sh
+# Ver información del entorno
+cat logs/environment_info.txt
 
-# Logs de Docker
-docker-compose logs -f backend
-docker-compose logs -f frontend
-```
-
-### Modo de Desarrollo
-
-```bash
-# Backend en modo debug
-source venv/bin/activate
-cd backend
+# Activar modo debug
 export DEBUG=true
-python -m uvicorn app.main:app --reload
-
-# Frontend en modo desarrollo
-cd frontend
-npm start
+source ./activate_valper.sh
+./scripts/start_backend.sh
 ```
 
 ## 📊 Monitoreo del Sistema
 
-### Métricas de Rendimiento
+### El script de activación muestra automáticamente:
+- ✅ Estado de Python y entorno virtual
+- ✅ Estado de GPU y CUDA
+- ✅ Modelos descargados
+- ✅ Servicios corriendo
+- ✅ Puertos en uso
 
+### Monitoreo manual:
 ```bash
-# Uso de CPU y memoria
-htop
-
-# Uso de GPU (si disponible)
+# Uso de GPU
 nvidia-smi
 
-# Espacio en disco
-df -h
-```
+# Uso de memoria
+htop
 
-### Health Checks
-
-```bash
 # Estado de servicios
-curl http://localhost:8000/health | jq
-
-# Métricas detalladas
-curl http://localhost:8000/metrics
+source ./activate_valper.sh  # Muestra estado completo
 ```
 
 ## 🔄 Actualización
@@ -291,25 +321,15 @@ curl http://localhost:8000/metrics
 # Obtener últimos cambios
 git pull origin main
 
-# Actualizar dependencias Python
-source venv/bin/activate
-pip install -r backend/requirements.txt
+# Reactivar entorno actualizado
+source ./activate_valper.sh
 
-# Actualizar dependencias Node.js
-cd frontend
-npm install
+# Actualizar dependencias si es necesario
+pip install -r backend/requirements.txt
 
 # Reiniciar servicios
 ./scripts/start_backend.sh
 ./scripts/start_frontend.sh
-```
-
-### Actualizar Modelos
-
-```bash
-# Re-descargar modelos
-rm -rf models/
-./scripts/setup_models.sh
 ```
 
 ## 🎯 Siguientes Pasos
@@ -319,16 +339,26 @@ Una vez que tengas Valper funcionando:
 1. **Explora la API**: http://localhost:8000/docs
 2. **Personaliza voces**: Modifica `TTSService` 
 3. **Integra LLM**: Añade ChatGPT/Claude al endpoint de conversación
-4. **Despliega en producción**: Usa Docker en un servidor
-5. **Contribuye**: Envía PRs con mejoras
+4. **Optimiza GPU**: Experimenta con diferentes configuraciones CUDA
+5. **Despliega en producción**: Usa Docker en un servidor
+6. **Contribuye**: Envía PRs con mejoras
 
 ## 📞 Soporte
 
 Si encuentras problemas:
 
-1. Revisa esta guía de setup
-2. Consulta la documentación en `docs/`
-3. Busca en issues de GitHub
-4. Crea un nuevo issue con logs detallados
+1. Ejecuta `source ./activate_valper.sh` para ver estado completo
+2. Revisa `logs/environment_info.txt` para información técnica
+3. Consulta la documentación en `docs/`
+4. Busca en issues de GitHub
+5. Crea un nuevo issue con logs detallados
+
+## 💡 Beneficios del Entorno Aislado
+
+✅ **Sin conflictos**: Tu GPU y dependencias están aisladas  
+✅ **Optimizado**: PyTorch configurado específicamente para tu hardware  
+✅ **Reproducible**: Mismas versiones en cualquier máquina  
+✅ **Fácil cleanup**: `rm -rf venv` para empezar de cero  
+✅ **Estado visible**: El script de activación muestra todo el estado  
 
 ¡Disfruta usando Valper AI Assistant! 🎉 
