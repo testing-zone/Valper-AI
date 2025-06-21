@@ -7,33 +7,89 @@ set -e
 
 echo "🐍 Setting up Valper AI Assistant environment with Python 3.11+..."
 
-# Check if Python 3.11+ is available
-python_version=$(python3 --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1,2)
-required_version="3.11"
-
-# Function to compare versions
-version_ge() {
-    printf '%s\n%s\n' "$2" "$1" | sort -V -C
+# Function to find the best Python 3.11+ version
+find_python311() {
+    # Try different Python 3.11+ executables in order of preference
+    for python_cmd in python3.12 python3.11 python3; do
+        if command -v "$python_cmd" &> /dev/null; then
+            version=$($python_cmd --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1,2)
+            # Check if version is >= 3.11
+            if [ "$(printf '%s\n3.11\n' "$version" | sort -V | head -n1)" = "3.11" ]; then
+                echo "$python_cmd"
+                return 0
+            fi
+        fi
+    done
+    return 1
 }
 
-if ! version_ge "$python_version" "$required_version"; then
-    echo "❌ Python 3.11+ required, found Python $python_version"
-    echo "Please install Python 3.11+ and try again"
+# Find Python 3.11+
+echo "🔍 Searching for Python 3.11+..."
+if PYTHON_CMD=$(find_python311); then
+    python_version=$($PYTHON_CMD --version 2>&1 | cut -d' ' -f2)
+    echo "✅ Found Python $python_version at: $(which $PYTHON_CMD)"
+else
+    echo "❌ Python 3.11+ not found!"
+    echo ""
+    echo "📦 Installing Python 3.11+ for your system..."
     
-    # Provide installation instructions based on OS
+    # Provide installation instructions and try to install automatically
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        echo "For macOS, install via:"
-        echo "  brew install python@3.11"
-        echo "  Or download from: https://www.python.org/downloads/"
+        echo "For macOS, installing via Homebrew..."
+        if command -v brew &> /dev/null; then
+            brew install python@3.11 || echo "⚠️  Manual installation may be needed"
+        else
+            echo "❌ Homebrew not found. Please install manually:"
+            echo "  1. Install Homebrew: https://brew.sh/"
+            echo "  2. Run: brew install python@3.11"
+            echo "  3. Or download from: https://www.python.org/downloads/"
+            exit 1
+        fi
     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        echo "For Ubuntu/Debian, install via:"
-        echo "  sudo apt update"
-        echo "  sudo apt install python3.11 python3.11-venv python3.11-dev"
+        echo "For Linux, installing Python 3.11..."
+        if command -v apt-get &> /dev/null; then
+            echo "📥 Installing Python 3.11 via apt..."
+            sudo apt update
+            sudo apt install -y software-properties-common
+            
+            # Check if we need to add deadsnakes PPA
+            if ! apt-cache show python3.11 &> /dev/null; then
+                echo "📦 Adding deadsnakes PPA for Python 3.11..."
+                sudo add-apt-repository ppa:deadsnakes/ppa -y
+                sudo apt update
+            fi
+            
+            sudo apt install -y python3.11 python3.11-venv python3.11-dev python3.11-distutils
+            echo "✅ Python 3.11 installation completed!"
+            
+        elif command -v yum &> /dev/null; then
+            echo "📥 Installing Python 3.11 via yum..."
+            sudo yum install -y python3.11 python3.11-devel
+        else
+            echo "❌ Package manager not detected. Please install Python 3.11 manually:"
+            echo "  Ubuntu/Debian: sudo apt install python3.11 python3.11-venv python3.11-dev"
+            echo "  CentOS/RHEL: sudo yum install python3.11 python3.11-devel"
+            exit 1
+        fi
+    else
+        echo "❌ Unsupported OS. Please install Python 3.11+ manually:"
+        echo "  Download from: https://www.python.org/downloads/"
+        exit 1
     fi
-    exit 1
+    
+    # Try to find Python again after installation
+    echo "🔍 Re-checking for Python 3.11+ after installation..."
+    if PYTHON_CMD=$(find_python311); then
+        python_version=$($PYTHON_CMD --version 2>&1 | cut -d' ' -f2)
+        echo "✅ Found Python $python_version at: $(which $PYTHON_CMD)"
+    else
+        echo "❌ Python 3.11+ still not found after installation attempt."
+        echo "Please check the installation and try again, or install manually:"
+        echo "  Ubuntu: sudo apt install python3.11 python3.11-venv python3.11-dev"
+        echo "  macOS: brew install python@3.11"
+        exit 1
+    fi
 fi
-
-echo "✅ Python $python_version found (≥ 3.11 required)"
 
 # Remove existing virtual environment if it exists to ensure clean setup
 if [ -d "venv" ]; then
@@ -42,23 +98,31 @@ if [ -d "venv" ]; then
 fi
 
 # Create isolated virtual environment with Python 3.11+
-echo "🏗️  Creating isolated virtual environment..."
-python3 -m venv venv --prompt "valper-ai"
+echo "🏗️  Creating isolated virtual environment with $PYTHON_CMD..."
+$PYTHON_CMD -m venv venv --prompt "valper-ai"
 echo "✅ Virtual environment created at: $(pwd)/venv"
 
 # Activate virtual environment
 echo "🔄 Activating virtual environment..."
 source venv/bin/activate
 
-# Verify we're in the correct environment
+# Verify we're in the correct environment and using the right Python
 echo "📍 Virtual environment info:"
 echo "  Python path: $(which python)"
 echo "  Python version: $(python --version)"
 echo "  Pip path: $(which pip)"
 
+# Verify Python version in virtual environment
+venv_python_version=$(python --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1,2)
+if [ "$(printf '%s\n3.11\n' "$venv_python_version" | sort -V | head -n1)" != "3.11" ]; then
+    echo "❌ Virtual environment is not using Python 3.11+!"
+    echo "Current version: $venv_python_version"
+    exit 1
+fi
+
 # Upgrade pip, setuptools, and wheel to latest versions
 echo "⬆️  Upgrading build tools..."
-pip install --upgrade pip setuptools wheel
+python -m pip install --upgrade pip setuptools wheel
 
 # Detect GPU and install appropriate PyTorch version
 echo "🔍 Detecting GPU configuration..."
@@ -93,7 +157,12 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     echo "Installing Linux dependencies..."
     if command -v apt-get &> /dev/null; then
         sudo apt-get update
-        sudo apt-get install -y portaudio19-dev espeak-ng python3.11-dev build-essential
+        sudo apt-get install -y portaudio19-dev espeak-ng build-essential
+        
+        # Install development headers for the Python version we're using
+        python_minor_version=$(python --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+        sudo apt-get install -y python${python_minor_version}-dev || echo "⚠️  Python dev headers already installed"
+        
     elif command -v yum &> /dev/null; then
         sudo yum install -y portaudio-devel espeak-ng python3-devel gcc
     else
@@ -133,6 +202,13 @@ httpx==0.25.2
 pytest==7.4.3
 pytest-asyncio==0.21.1
 
+# Additional audio processing
+librosa>=0.10.1
+scipy>=1.11.0
+
+# Performance monitoring
+psutil>=5.9.0
+
 # Additional GPU optimizations (if GPU detected)
 EOF
 
@@ -143,18 +219,21 @@ if [ "$gpu_detected" = true ]; then
 fi
 
 # Install all dependencies
+echo "📦 Installing Python packages..."
 pip install -r requirements_fixed.txt
 
 # Verify critical installations
 echo "🔍 Verifying installations..."
-python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+echo "Testing core dependencies..."
+python -c "import torch; print(f'✅ PyTorch version: {torch.__version__}')"
+python -c "import torch; print(f'✅ CUDA available: {torch.cuda.is_available()}')"
 if [ "$gpu_detected" = true ]; then
-    python -c "import torch; print(f'CUDA device count: {torch.cuda.device_count()}')" || echo "⚠️  CUDA not properly configured"
+    python -c "import torch; print(f'✅ CUDA device count: {torch.cuda.device_count()}')" || echo "⚠️  CUDA not properly configured"
 fi
 
 python -c "import deepspeech; print('✅ DeepSpeech installed')" || echo "❌ DeepSpeech installation failed"
 python -c "import soundfile; print('✅ SoundFile installed')" || echo "❌ SoundFile installation failed"
+python -c "import fastapi; print('✅ FastAPI installed')" || echo "❌ FastAPI installation failed"
 
 # Try to import Kokoro (might fail initially, that's OK)
 python -c "
@@ -229,6 +308,7 @@ echo "=========================="
 echo "📍 Project location: $(pwd)"
 echo "📍 Virtual environment: $(pwd)/venv"
 echo "📍 Python version: $(python --version)"
+echo "📍 Python executable: $(which python)"
 echo "📍 Pip packages installed: $(pip list | wc -l) packages"
 
 if [ "$gpu_detected" = true ]; then
@@ -263,7 +343,9 @@ Valper AI Environment Setup Information
 ======================================
 Date: $(date)
 OS: $OSTYPE
+Python command used: $PYTHON_CMD
 Python version: $(python --version)
+Python path: $(which python)
 Pip version: $(pip --version)
 GPU detected: $gpu_detected
 Virtual environment: $(pwd)/venv
@@ -278,4 +360,8 @@ System Information:
 $(uname -a)
 EOF
 
-echo "📝 Environment info saved to: logs/environment_info.txt" 
+echo "📝 Environment info saved to: logs/environment_info.txt"
+echo ""
+echo "🚀 Ready to continue! Run the following to proceed:"
+echo "   source ./activate_valper.sh"
+echo "   ./scripts/setup_models.sh" 
