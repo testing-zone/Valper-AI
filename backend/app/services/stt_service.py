@@ -174,6 +174,11 @@ class STTService:
             "available_models": self.get_available_models()
         }
     
+    @property
+    def is_ready(self) -> bool:
+        """Check if the STT service is ready"""
+        return self.is_initialized
+    
     def is_available(self) -> bool:
         """Check if the STT service is available"""
         return self.is_initialized

@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Initialize services (will be done in main.py)
-stt_service = STTService()
-tts_service = TTSService()
+# Services will be injected from main.py
+stt_service = None
+tts_service = None
 
 class TTSRequest(BaseModel):
     text: str
@@ -27,36 +27,30 @@ async def health_check():
     """Health check endpoint for API monitoring"""
     return {
         "status": "healthy",
-        "stt_ready": stt_service.is_ready,
-        "tts_ready": tts_service.is_ready
+        "stt_ready": stt_service.is_ready if stt_service else False,
+        "tts_ready": tts_service.is_ready if tts_service else False
     }
 
 @router.post("/stt")
 async def speech_to_text(audio: UploadFile = File(...)):
     """Convert speech to text"""
-    if not stt_service.is_ready:
+    if not stt_service or not stt_service.is_ready:
         raise HTTPException(status_code=503, detail="STT service not available")
     
     if not audio.content_type.startswith('audio/'):
         raise HTTPException(status_code=400, detail="File must be an audio file")
     
     try:
-        # Save uploaded file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
-            content = await audio.read()
-            temp_file.write(content)
-            temp_file_path = temp_file.name
+        # Read audio file content
+        content = await audio.read()
         
-        # Transcribe audio
-        text = await stt_service.transcribe_audio(temp_file_path)
+        # Transcribe audio using bytes
+        result = await stt_service.transcribe_audio(content)
         
-        # Clean up temporary file
-        os.unlink(temp_file_path)
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to transcribe audio"))
         
-        if text is None:
-            raise HTTPException(status_code=500, detail="Failed to transcribe audio")
-        
-        return {"text": text}
+        return {"text": result["text"]}
         
     except Exception as e:
         logger.error(f"Error in STT endpoint: {e}")
@@ -65,7 +59,7 @@ async def speech_to_text(audio: UploadFile = File(...)):
 @router.post("/tts")
 async def text_to_speech(request: TTSRequest):
     """Convert text to speech"""
-    if not tts_service.is_ready:
+    if not tts_service or not tts_service.is_ready:
         raise HTTPException(status_code=503, detail="TTS service not available")
     
     try:
@@ -87,6 +81,8 @@ async def text_to_speech(request: TTSRequest):
 @router.get("/voices")
 async def get_voices():
     """Get available TTS voices"""
+    if not tts_service:
+        return {"voices": []}
     return {"voices": tts_service.get_available_voices()}
 
 @router.post("/conversation")
@@ -94,6 +90,9 @@ async def conversation(request: ConversationRequest):
     """Simple conversation endpoint (placeholder for future LLM integration)"""
     # This is a simple echo for now - you can integrate with an LLM later
     response_text = f"You said: {request.message}. This is Valper responding!"
+    
+    if not tts_service or not tts_service.is_ready:
+        return {"text_response": response_text, "audio_url": None}
     
     try:
         audio_file_path = await tts_service.synthesize_speech(response_text)

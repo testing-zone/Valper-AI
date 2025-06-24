@@ -27,9 +27,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize services
+# Initialize services as global instances
 stt_service = STTService()
 tts_service = TTSService()
+
+# Share services with router
+from app.api import routes
+routes.stt_service = stt_service
+routes.tts_service = tts_service
 
 @app.on_event("startup")
 async def startup_event():
