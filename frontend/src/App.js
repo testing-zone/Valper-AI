@@ -61,8 +61,8 @@ function App() {
 
   const checkBackendHealth = async () => {
     try {
-      // Try direct backend connection first
-      const response = await fetch(`http://localhost:8000/health?t=${Date.now()}`, {
+      // Add cache busting parameter
+      const response = await fetch(`/health?t=${Date.now()}`, {
         method: 'GET',
         headers: {
           'Cache-Control': 'no-cache',
@@ -167,15 +167,32 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error('TTS test failed');
+        const errorText = await response.text();
+        throw new Error(`TTS test failed: ${response.status} - ${errorText}`);
       }
 
       const audioBlob = await response.blob();
+      console.log('Audio blob size:', audioBlob.size);
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
-      audio.play();
+      
+      audio.oncanplay = () => {
+        console.log('Audio can play');
+        setStatus('Playing audio...');
+      };
+      
+      audio.onended = () => {
+        console.log('Audio finished playing');
+        setStatus('Ready');
+      };
+      
+      audio.onerror = (e) => {
+        console.error('Audio playback error:', e);
+        setStatus('Audio playback error');
+      };
+      
+      await audio.play();
 
-      setStatus('Ready');
     } catch (error) {
       console.error('TTS test error:', error);
       setStatus('Error: ' + error.message);

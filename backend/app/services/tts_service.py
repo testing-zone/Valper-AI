@@ -2,59 +2,32 @@ import asyncio
 import logging
 import os
 import tempfile
-import threading
-from typing import Optional, Generator, Tuple
+from typing import Optional, Generator
 import soundfile as sf
-import pyttsx3
+import torch
+from kokoro import KPipeline
 
 logger = logging.getLogger(__name__)
 
 class TTSService:
     def __init__(self):
-        self.engine = None
+        self.pipeline = None
         self.is_ready = False
         
     async def initialize(self):
-        """Initialize pyttsx3 TTS engine"""
+        """Initialize Kokoro TTS pipeline"""
         try:
-            logger.info("Loading pyttsx3 TTS engine...")
-            self.engine = pyttsx3.init()
-            self._configure_engine()
+            logger.info("Loading Kokoro TTS pipeline...")
+            # Initialize Kokoro pipeline with language code 'a' (English)
+            self.pipeline = KPipeline(lang_code='a')
             self.is_ready = True
-            logger.info("pyttsx3 TTS engine loaded successfully")
+            logger.info("Kokoro TTS pipeline loaded successfully")
             
         except Exception as e:
-            logger.error(f"Error initializing TTS service: {e}")
+            logger.error(f"Error initializing Kokoro TTS service: {e}")
             self.is_ready = False
     
-    def _configure_engine(self):
-        """Configure the TTS engine settings"""
-        if not self.engine:
-            return
-            
-        try:
-            # Set speech rate (words per minute)
-            self.engine.setProperty('rate', 180)
-            
-            # Set volume (0.0 to 1.0)
-            self.engine.setProperty('volume', 0.9)
-            
-            # Try to set a nice voice
-            voices = self.engine.getProperty('voices')
-            if voices:
-                # Prefer female voice if available
-                for voice in voices:
-                    if 'female' in voice.name.lower() or 'woman' in voice.name.lower():
-                        self.engine.setProperty('voice', voice.id)
-                        break
-                else:
-                    # Use first available voice
-                    self.engine.setProperty('voice', voices[0].id)
-                    
-        except Exception as e:
-            logger.warning(f"Could not configure TTS engine: {str(e)}")
-    
-    async def synthesize_speech(self, text: str, voice: str = 'default') -> Optional[str]:
+    async def synthesize_speech(self, text: str, voice: str = 'af_heart') -> Optional[str]:
         """Synthesize speech from text and return audio file path"""
         if not self.is_ready:
             raise Exception("TTS service not initialized")
@@ -72,38 +45,36 @@ class TTSService:
             temp_file_path = temp_file.name
             temp_file.close()
             
-            # Use threading to avoid blocking
-            def _synthesize():
-                try:
-                    self.engine.save_to_file(text, temp_file_path)
-                    self.engine.runAndWait()
-                except Exception as e:
-                    logger.error(f"TTS synthesis error: {str(e)}")
+            # Generate audio using Kokoro
+            logger.info(f"Generating audio for text: {text[:50]}...")
+            generator = self.pipeline(text, voice=voice)
             
-            # Run synthesis in thread
-            thread = threading.Thread(target=_synthesize)
-            thread.start()
-            thread.join(timeout=30)  # 30 second timeout
+            # Get the first (and usually only) audio output
+            for i, (gs, ps, audio) in enumerate(generator):
+                logger.info(f"Generated audio chunk {i}, shape: {audio.shape}")
+                # Save audio using soundfile (24kHz sample rate for Kokoro)
+                sf.write(temp_file_path, audio, 24000)
+                break  # Only use the first generated audio
             
             # Check if file was created and has content
             if os.path.exists(temp_file_path) and os.path.getsize(temp_file_path) > 0:
-                logger.info(f"Audio saved to: {temp_file_path}")
+                logger.info(f"Audio saved to: {temp_file_path}, size: {os.path.getsize(temp_file_path)} bytes")
                 return temp_file_path
             else:
                 logger.error("TTS synthesis failed - no audio file generated")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error synthesizing speech: {e}")
+            logger.error(f"Error synthesizing speech with Kokoro: {e}")
             return None
     
-    async def synthesize_speech_stream(self, text: str, voice: str = 'default') -> Generator[bytes, None, None]:
+    async def synthesize_speech_stream(self, text: str, voice: str = 'af_heart') -> Generator[bytes, None, None]:
         """Synthesize speech and yield audio chunks for streaming"""
         if not self.is_ready:
             raise Exception("TTS service not initialized")
         
         try:
-            # For pyttsx3, we'll generate the full audio and then stream it
+            # For Kokoro, we'll generate the full audio and then stream it
             audio_file_path = await self.synthesize_speech(text, voice)
             
             if audio_file_path and os.path.exists(audio_file_path):
@@ -126,44 +97,31 @@ class TTSService:
             logger.error(f"Error streaming speech: {e}")
     
     def get_available_voices(self) -> list:
-        """Get list of available voices"""
-        if not self.engine:
-            return []
-            
-        try:
-            voices = self.engine.getProperty('voices')
-            if voices:
-                return [{"id": voice.id, "name": voice.name} for voice in voices]
-            return []
-        except Exception as e:
-            logger.warning(f"Could not get available voices: {str(e)}")
-            return []
+        """Get list of available Kokoro voices"""
+        # Common Kokoro voices
+        return [
+            {"id": "af_heart", "name": "African Female Heart"},
+            {"id": "af_sky", "name": "African Female Sky"},
+            {"id": "af_bella", "name": "African Female Bella"},
+            {"id": "af_sarah", "name": "African Female Sarah"},
+            {"id": "am_adam", "name": "African Male Adam"},
+            {"id": "am_michael", "name": "African Male Michael"},
+            {"id": "bf_emma", "name": "British Female Emma"},
+            {"id": "bf_isabella", "name": "British Female Isabella"},
+            {"id": "bm_george", "name": "British Male George"},
+            {"id": "bm_lewis", "name": "British Male Lewis"}
+        ]
     
     def is_available(self) -> bool:
         """Check if the TTS service is available"""
-        return self.is_ready and self.engine is not None
+        return self.is_ready and self.pipeline is not None
     
     def get_info(self) -> dict:
         """Get information about the TTS service"""
-        info = {
-            "service": "pyttsx3",
-            "status": "ready" if self.is_available() else "not available"
-        }
-        
-        if self.engine:
-            try:
-                voices = self.engine.getProperty('voices')
-                if voices:
-                    current_voice = self.engine.getProperty('voice')
-                    voice_info = next((v for v in voices if v.id == current_voice), None)
-                    if voice_info:
-                        info["voice"] = voice_info.name
-                        info["language"] = getattr(voice_info, 'languages', ['unknown'])
-                
-                info["rate"] = self.engine.getProperty('rate')
-                info["volume"] = self.engine.getProperty('volume')
-                
-            except Exception as e:
-                logger.warning(f"Could not get TTS info: {str(e)}")
-        
-        return info 
+        return {
+            "service": "Kokoro TTS",
+            "status": "ready" if self.is_available() else "not available",
+            "model": "Kokoro 82M parameters",
+            "sample_rate": "24kHz",
+            "available_voices": len(self.get_available_voices())
+        } 
