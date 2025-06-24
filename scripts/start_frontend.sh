@@ -29,6 +29,14 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
+# Set environment variables to fix dev server configuration
+export GENERATE_SOURCEMAP=false
+export FAST_REFRESH=true
+export WDS_SOCKET_HOST=localhost
+export WDS_SOCKET_PORT=3000
+export CHOKIDAR_USEPOLLING=false
+export REACT_APP_BACKEND_URL=http://localhost:8000
+
 # Start the development server
 echo "Starting React development server..."
 npm start
