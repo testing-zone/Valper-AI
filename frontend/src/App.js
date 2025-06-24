@@ -61,8 +61,21 @@ function App() {
 
   const checkBackendHealth = async () => {
     try {
-      const response = await fetch('/health');
+      // Try direct backend connection first
+      const response = await fetch(`http://localhost:8000/health?t=${Date.now()}`, {
+        method: 'GET',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
+      console.log('Health check response:', data);
       setBackendHealth(data);
     } catch (error) {
       console.error('Backend health check failed:', error);
@@ -220,6 +233,10 @@ function App() {
                   Status: {status}
                 </Typography>
               )}
+              {/* Debug info */}
+              <Typography variant="caption" sx={{ mt: 1, display: 'block', color: 'text.secondary' }}>
+                Debug: {JSON.stringify(backendHealth)}
+              </Typography>
             </CardContent>
           </Card>
 
