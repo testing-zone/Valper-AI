@@ -15,8 +15,7 @@
     "@mui/material": "^5.14.18",
     "@mui/icons-material": "^5.14.18",
     "@emotion/react": "^11.11.1",
-    "@emotion/styled": "^11.11.0",
-    "react-audio-recorder": "^1.0.4"
+    "@emotion/styled": "^11.11.0"
   },
   "scripts": {
     "start": "react-scripts start",
