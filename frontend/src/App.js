@@ -61,7 +61,7 @@ function App() {
 
   const checkBackendHealth = async () => {
     try {
-      const response = await fetch('/api/v1/health');
+      const response = await fetch('/health');
       const data = await response.json();
       setBackendHealth(data);
     } catch (error) {

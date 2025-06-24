@@ -22,6 +22,15 @@ class TTSRequest(BaseModel):
 class ConversationRequest(BaseModel):
     message: str
 
+@router.get("/health")
+async def health_check():
+    """Health check endpoint for API monitoring"""
+    return {
+        "status": "healthy",
+        "stt_ready": stt_service.is_ready,
+        "tts_ready": tts_service.is_ready
+    }
+
 @router.post("/stt")
 async def speech_to_text(audio: UploadFile = File(...)):
     """Convert speech to text"""
