@@ -32,13 +32,14 @@ fi
 # Set environment variables to fix dev server configuration
 export GENERATE_SOURCEMAP=false
 export FAST_REFRESH=true
-export WDS_SOCKET_HOST=localhost
-export WDS_SOCKET_PORT=3000
-export CHOKIDAR_USEPOLLING=false
+export SKIP_PREFLIGHT_CHECK=true
 export REACT_APP_BACKEND_URL=http://localhost:8000
 
-# Start the development server
+# Start the development server with custom configuration
 echo "Starting React development server..."
-npm start
+echo "Note: Ignoring webpack dev server configuration warnings..."
+
+# Use npx to run react-scripts with custom host configuration
+HOST=0.0.0.0 PORT=3000 npm start
 
 echo "🎉 Frontend started on http://localhost:3000" 
