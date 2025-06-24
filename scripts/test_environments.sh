@@ -212,11 +212,16 @@ test_backend_environment() {
     # Test backend file structure
     log_test "Testing backend file structure..."
     required_files=(
-        "backend/main.py"
+        "backend/app/main.py"
+        "backend/app/services/stt_service.py"
+        "backend/app/services/tts_service.py"
+        "backend/app/api/routes.py"
+        "backend/config.py"
+    )
+    
+    optional_files=(
         "backend/services/stt_service.py"
         "backend/services/tts_service.py"
-        "backend/routes/stt_routes.py"
-        "backend/routes/tts_routes.py"
     )
     
     for file in "${required_files[@]}"; do
@@ -224,6 +229,12 @@ test_backend_environment() {
             log_success "Found: $file"
         else
             log_error "Missing: $file"
+        fi
+    done
+    
+    for file in "${optional_files[@]}"; do
+        if [ -f "$file" ]; then
+            log_success "Found (optional): $file"
         fi
     done
     
