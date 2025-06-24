@@ -1,470 +1,419 @@
 #!/bin/bash
 
-# Valper AI Assistant - Environment Testing Script
-# This script tests both STT and TTS environments and provides troubleshooting
+# Valper AI - Environment Testing Script with Whisper
+# Tests STT (Whisper) and TTS (Kokoro) environments
 
 set -e
-
-echo "🧪 Valper AI - Environment Testing & Troubleshooting"
-echo "===================================================="
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Function to print colored output
-print_status() {
-    case $1 in
-        "ERROR") echo -e "${RED}❌ $2${NC}" ;;
-        "SUCCESS") echo -e "${GREEN}✅ $2${NC}" ;;
-        "WARNING") echo -e "${YELLOW}⚠️  $2${NC}" ;;
-        "INFO") echo -e "${BLUE}ℹ️  $2${NC}" ;;
-    esac
+# Functions
+log_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
-# Function to test STT environment
+log_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+log_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+log_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+log_test() {
+    echo -e "${PURPLE}🧪 $1${NC}"
+}
+
+log_header() {
+    echo -e "${CYAN}$1${NC}"
+}
+
+# Test STT Environment (Whisper)
 test_stt_environment() {
-    echo ""
-    echo "🎤 Testing STT (DeepSpeech) Environment"
-    echo "======================================"
+    log_header "🎤 Testing STT Environment (OpenAI Whisper)"
+    echo "=============================================="
     
-    # Check if STT environment exists
     if [ ! -d "venv_stt" ]; then
-        print_status "ERROR" "STT environment not found"
-        echo "Run: ./scripts/setup_stt_environment.sh"
+        log_error "STT environment not found. Run scripts/setup_stt_environment.sh first"
         return 1
     fi
     
-    print_status "SUCCESS" "STT environment directory found"
+    log_test "Activating STT environment..."
+    source venv_stt/bin/activate
     
-    # Test STT environment activation
-    echo "🔄 Testing STT environment activation..."
-    if source venv_stt/bin/activate; then
-        print_status "SUCCESS" "STT environment activated"
-        
-        # Test Python version
-        python_version=$(python --version 2>&1)
-        print_status "INFO" "Python version: $python_version"
-        
-        # Test DeepSpeech import
-        echo "📦 Testing DeepSpeech import..."
-        if python -c "import deepspeech; print(f'DeepSpeech version: {deepspeech.__version__}')" 2>/dev/null; then
-            print_status "SUCCESS" "DeepSpeech imported successfully"
-        else
-            print_status "ERROR" "DeepSpeech import failed"
-            echo "Troubleshooting:"
-            echo "1. Check if DeepSpeech was installed: pip list | grep deepspeech"
-            echo "2. Try reinstalling: pip install deepspeech==0.9.3"
-            echo "3. Check Python version compatibility (3.8-3.10 required)"
-        fi
-        
-        # Test audio dependencies
-        echo "🔊 Testing audio dependencies..."
-        deps_ok=true
-        
-        for dep in numpy soundfile librosa; do
-            if python -c "import $dep" 2>/dev/null; then
-                print_status "SUCCESS" "$dep imported successfully"
-            else
-                print_status "ERROR" "$dep import failed"
-                deps_ok=false
-            fi
-        done
-        
-        # Test model files
-        echo "📁 Testing model files..."
-        if [ -f "models/stt/deepspeech-0.9.3-models.pbmm" ]; then
-            print_status "SUCCESS" "DeepSpeech model file found"
-        else
-            print_status "ERROR" "DeepSpeech model file not found"
-            echo "Download with: wget -O models/stt/deepspeech-0.9.3-models.pbmm https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.pbmm"
-        fi
-        
-        if [ -f "models/stt/deepspeech-0.9.3-models.scorer" ]; then
-            print_status "SUCCESS" "DeepSpeech scorer file found"
-        else
-            print_status "WARNING" "DeepSpeech scorer file not found (optional)"
-        fi
-        
-        # Test STT functionality
-        echo "🎯 Testing STT functionality..."
-        cat > test_stt.py << 'EOF'
-import sys
-import os
-sys.path.append('backend')
-
-try:
-    from app.services.stt_service import STTService
-    import asyncio
+    # Test Python and pip
+    log_test "Testing Python installation..."
+    python_version=$(python --version 2>&1)
+    pip_version=$(pip --version 2>&1)
+    log_info "Python: $python_version"
+    log_info "Pip: $pip_version"
     
-    async def test_stt():
-        stt = STTService()
-        await stt.initialize()
-        
-        if stt.is_available():
-            print("✅ STT service initialized successfully")
-            info = stt.get_info()
-            print(f"✅ STT info: {info}")
-            return True
-        else:
-            print("❌ STT service initialization failed")
-            return False
-    
-    result = asyncio.run(test_stt())
-    if result:
-        print("✅ STT functionality test PASSED")
-    else:
-        print("❌ STT functionality test FAILED")
-        
-except Exception as e:
-    print(f"❌ STT test error: {e}")
-EOF
-        
-        if python test_stt.py; then
-            print_status "SUCCESS" "STT functionality test completed"
-        else
-            print_status "ERROR" "STT functionality test failed"
-        fi
-        
-        rm -f test_stt.py
-        deactivate
-        
+    # Test Whisper installation
+    log_test "Testing Whisper installation..."
+    if python -c "import whisper; print(f'Whisper version: {whisper.__version__}')" 2>/dev/null; then
+        log_success "Whisper import successful"
     else
-        print_status "ERROR" "Failed to activate STT environment"
-        return 1
-    fi
-}
-
-# Function to test TTS environment
-test_tts_environment() {
-    echo ""
-    echo "🔊 Testing TTS (Kokoro) Environment"
-    echo "==================================="
-    
-    # Check if TTS environment exists
-    if [ ! -d "venv_tts" ]; then
-        print_status "ERROR" "TTS environment not found"
-        echo "Run: ./scripts/setup_tts_environment.sh"
+        log_error "Whisper import failed"
         return 1
     fi
     
-    print_status "SUCCESS" "TTS environment directory found"
-    
-    # Test TTS environment activation
-    echo "🔄 Testing TTS environment activation..."
-    if source venv_tts/bin/activate; then
-        print_status "SUCCESS" "TTS environment activated"
-        
-        # Test Python version
-        python_version=$(python --version 2>&1)
-        print_status "INFO" "Python version: $python_version"
-        
-        # Test PyTorch
-        echo "🔥 Testing PyTorch..."
-        if python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')" 2>/dev/null; then
-            print_status "SUCCESS" "PyTorch imported successfully"
-        else
-            print_status "ERROR" "PyTorch import failed"
-            echo "Troubleshooting:"
-            echo "1. Reinstall PyTorch: pip install torch torchaudio"
-            echo "2. For GPU: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118"
-        fi
-        
-        # Test Kokoro TTS
-        echo "🎵 Testing Kokoro TTS..."
-        if python -c "from kokoro import KPipeline; print('Kokoro TTS imported successfully')" 2>/dev/null; then
-            print_status "SUCCESS" "Kokoro TTS imported successfully"
-        else
-            print_status "WARNING" "Kokoro TTS import failed, checking fallback..."
-            if python -c "import pyttsx3; print('Fallback TTS (pyttsx3) available')" 2>/dev/null; then
-                print_status "SUCCESS" "Fallback TTS available"
-            else
-                print_status "ERROR" "No TTS available"
-                echo "Install fallback: pip install pyttsx3"
-            fi
-        fi
-        
-        # Test audio dependencies
-        echo "🔊 Testing audio dependencies..."
-        for dep in numpy soundfile librosa scipy; do
-            if python -c "import $dep" 2>/dev/null; then
-                print_status "SUCCESS" "$dep imported successfully"
-            else
-                print_status "ERROR" "$dep import failed"
-            fi
-        done
-        
-        # Test TTS functionality
-        echo "🎯 Testing TTS functionality..."
-        cat > test_tts.py << 'EOF'
-import sys
-import os
-sys.path.append('backend')
-
-try:
-    from app.services.tts_service import TTSService
-    import asyncio
-    
-    async def test_tts():
-        tts = TTSService()
-        await tts.initialize()
-        
-        if tts.is_available():
-            print("✅ TTS service initialized successfully")
-            info = tts.get_info()
-            print(f"✅ TTS info: {info}")
-            
-            # Test basic synthesis
-            print("🎵 Testing speech synthesis...")
-            audio_file = await tts.synthesize_speech("Hello, this is a test of the TTS system.")
-            if audio_file:
-                print(f"✅ Audio generated: {audio_file}")
-                # Clean up test file
-                if os.path.exists(audio_file):
-                    os.unlink(audio_file)
-                return True
-            else:
-                print("❌ Audio generation failed")
-                return False
-        else:
-            print("❌ TTS service initialization failed")
-            return False
-    
-    result = asyncio.run(test_tts())
-    if result:
-        print("✅ TTS functionality test PASSED")
-    else:
-        print("❌ TTS functionality test FAILED")
-        
-except Exception as e:
-    print(f"❌ TTS test error: {e}")
-EOF
-        
-        if python test_tts.py; then
-            print_status "SUCCESS" "TTS functionality test completed"
-        else
-            print_status "ERROR" "TTS functionality test failed"
-        fi
-        
-        rm -f test_tts.py
-        deactivate
-        
+    # Test FFmpeg
+    log_test "Testing FFmpeg integration..."
+    if command -v ffmpeg &> /dev/null; then
+        ffmpeg_version=$(ffmpeg -version 2>&1 | head -n 1)
+        log_success "FFmpeg available: $ffmpeg_version"
     else
-        print_status "ERROR" "Failed to activate TTS environment"
-        return 1
-    fi
-}
-
-# Function to test backend integration
-test_backend_integration() {
-    echo ""
-    echo "🔗 Testing Backend Integration"
-    echo "============================="
-    
-    # Check if backend files exist
-    if [ ! -f "backend/app/main.py" ]; then
-        print_status "ERROR" "Backend main.py not found"
+        log_error "FFmpeg not found"
         return 1
     fi
     
-    print_status "SUCCESS" "Backend files found"
-    
-    # Test FastAPI dependencies
-    echo "🚀 Testing FastAPI dependencies..."
-    # Use the main venv or create a temporary one for backend testing
-    if [ -d "venv" ]; then
-        source venv/bin/activate
-    elif [ -d "venv_tts" ]; then
-        source venv_tts/bin/activate
+    # Test Whisper CLI
+    log_test "Testing Whisper CLI..."
+    if whisper --help &> /dev/null; then
+        log_success "Whisper CLI working"
     else
-        print_status "ERROR" "No Python environment found for backend testing"
+        log_error "Whisper CLI failed"
         return 1
     fi
     
-    for dep in fastapi uvicorn pydantic python-multipart; do
-        if python -c "import ${dep/_/-}" 2>/dev/null; then
-            print_status "SUCCESS" "$dep available"
+    # Test model loading
+    log_test "Testing Whisper model loading (this may take a moment)..."
+    if python -c "
+import whisper
+print('Loading tiny model for testing...')
+model = whisper.load_model('tiny')
+print('✅ Model loaded successfully')
+print(f'Available models: {whisper.available_models()}')
+" 2>/dev/null; then
+        log_success "Whisper model loading successful"
+    else
+        log_error "Whisper model loading failed"
+        return 1
+    fi
+    
+    # Test additional packages
+    log_test "Testing additional packages..."
+    for package in librosa soundfile fastapi uvicorn; do
+        if python -c "import $package" 2>/dev/null; then
+            log_success "$package imported successfully"
         else
-            print_status "WARNING" "$dep not found in current environment"
+            log_warning "$package import failed (optional)"
         fi
     done
     
-    # Test backend import
-    echo "📦 Testing backend imports..."
-    if python -c "
-import sys
-sys.path.append('backend')
-try:
-    from app.main import app
-    print('✅ Backend app imported successfully')
-except Exception as e:
-    print(f'❌ Backend import failed: {e}')
+    deactivate
+    log_success "STT environment tests completed successfully!"
+    echo
+}
+
+# Test TTS Environment (Kokoro)
+test_tts_environment() {
+    log_header "🔊 Testing TTS Environment (Kokoro)"
+    echo "======================================="
+    
+    if [ ! -d "venv_tts" ]; then
+        log_error "TTS environment not found. Run scripts/setup_tts_environment.sh first"
+        return 1
+    fi
+    
+    log_test "Activating TTS environment..."
+    source venv_tts/bin/activate
+    
+    # Test Python and pip
+    log_test "Testing Python installation..."
+    python_version=$(python --version 2>&1)
+    pip_version=$(pip --version 2>&1)
+    log_info "Python: $python_version"
+    log_info "Pip: $pip_version"
+    
+    # Test PyTorch
+    log_test "Testing PyTorch installation..."
+    if python -c "import torch; print(f'PyTorch version: {torch.__version__}')" 2>/dev/null; then
+        log_success "PyTorch import successful"
+        
+        # Test CUDA availability
+        if python -c "import torch; print('CUDA available:', torch.cuda.is_available())" 2>/dev/null; then
+            log_info "CUDA check completed"
+        fi
+    else
+        log_error "PyTorch import failed"
+        return 1
+    fi
+    
+    # Test Kokoro TTS components
+    log_test "Testing Kokoro TTS components..."
+    for package in phonemizer espeak; do
+        if python -c "import $package" 2>/dev/null; then
+            log_success "$package imported successfully"
+        else
+            log_warning "$package import failed (may need system dependencies)"
+        fi
+    done
+    
+    # Test if espeak is available system-wide
+    if command -v espeak &> /dev/null; then
+        log_success "espeak system command available"
+    else
+        log_warning "espeak system command not found"
+    fi
+    
+    # Test additional packages
+    log_test "Testing additional packages..."
+    for package in numpy scipy librosa soundfile fastapi uvicorn; do
+        if python -c "import $package" 2>/dev/null; then
+            log_success "$package imported successfully"
+        else
+            log_warning "$package import failed"
+        fi
+    done
+    
+    deactivate
+    log_success "TTS environment tests completed!"
+    echo
+}
+
+# Test Backend Environment
+test_backend_environment() {
+    log_header "🖥️  Testing Backend Environment"
+    echo "==============================="
+    
+    if [ ! -d "venv_backend" ]; then
+        log_warning "Backend environment not found, creating it..."
+        python3 -m venv venv_backend
+        source venv_backend/bin/activate
+        pip install --upgrade pip
+        pip install fastapi uvicorn python-multipart
+    else
+        source venv_backend/bin/activate
+    fi
+    
+    # Test FastAPI components
+    log_test "Testing FastAPI components..."
+    for package in fastapi uvicorn pydantic; do
+        if python -c "import $package" 2>/dev/null; then
+            log_success "$package imported successfully"
+        else
+            log_error "$package import failed"
+            return 1
+        fi
+    done
+    
+    # Test backend file structure
+    log_test "Testing backend file structure..."
+    required_files=(
+        "backend/main.py"
+        "backend/services/stt_service.py"
+        "backend/services/tts_service.py"
+        "backend/routes/stt_routes.py"
+        "backend/routes/tts_routes.py"
+    )
+    
+    for file in "${required_files[@]}"; do
+        if [ -f "$file" ]; then
+            log_success "Found: $file"
+        else
+            log_error "Missing: $file"
+        fi
+    done
+    
+    deactivate
+    log_success "Backend environment tests completed!"
+    echo
+}
+
+# Create a simple test audio file
+create_test_audio() {
+    log_test "Creating test audio file..."
+    
+    # Create a simple test audio using sox if available
+    if command -v sox &> /dev/null; then
+        sox -n -r 16000 -c 1 test_audio.wav synth 3 sine 440 vol 0.1
+        log_success "Created test_audio.wav"
+        return 0
+    fi
+    
+    # Alternative: create using FFmpeg
+    if command -v ffmpeg &> /dev/null; then
+        ffmpeg -f lavfi -i "sine=frequency=440:duration=3" -ar 16000 -ac 1 test_audio.wav -y &>/dev/null
+        log_success "Created test_audio.wav with FFmpeg"
+        return 0
+    fi
+    
+    log_warning "Cannot create test audio (sox or ffmpeg required)"
+    return 1
+}
+
+# Run integration test
+run_integration_test() {
+    log_header "🧪 Running Integration Test"
+    echo "============================"
+    
+    if ! create_test_audio; then
+        log_warning "Skipping integration test (no test audio)"
+        return 0
+    fi
+    
+    # Test STT with Whisper
+    if [ -d "venv_stt" ]; then
+        log_test "Testing STT with test audio..."
+        source venv_stt/bin/activate
+        
+        if python -c "
+import whisper
+model = whisper.load_model('tiny')
+result = model.transcribe('test_audio.wav')
+print(f'Transcription result: {result[\"text\"]}')
 " 2>/dev/null; then
-        print_status "SUCCESS" "Backend imports successful"
-    else
-        print_status "ERROR" "Backend import failed"
+            log_success "STT integration test passed"
+        else
+            log_warning "STT integration test failed"
+        fi
+        
+        deactivate
     fi
     
-    deactivate 2>/dev/null || true
+    # Clean up
+    [ -f "test_audio.wav" ] && rm test_audio.wav
+    echo
 }
 
-# Function to run API tests
-test_api_endpoints() {
-    echo ""
-    echo "🌐 Testing API Endpoints"
-    echo "======================="
-    
-    echo "📝 This test requires the backend to be running"
-    echo "To start backend: ./scripts/start_backend.sh"
-    echo ""
-    
-    # Check if backend is running
-    if curl -s http://localhost:8000/health > /dev/null 2>&1; then
-        print_status "SUCCESS" "Backend is running"
-        
-        # Test health endpoint
-        echo "🔍 Testing /health endpoint..."
-        response=$(curl -s http://localhost:8000/health)
-        if echo "$response" | grep -q "status"; then
-            print_status "SUCCESS" "Health endpoint working"
-        else
-            print_status "ERROR" "Health endpoint failed"
-        fi
-        
-        # Test STT info endpoint
-        echo "🎤 Testing /api/v1/stt/info endpoint..."
-        if curl -s http://localhost:8000/api/v1/stt/info > /dev/null; then
-            print_status "SUCCESS" "STT info endpoint accessible"
-        else
-            print_status "WARNING" "STT info endpoint not accessible"
-        fi
-        
-        # Test TTS info endpoint
-        echo "🔊 Testing /api/v1/tts/info endpoint..."
-        if curl -s http://localhost:8000/api/v1/tts/info > /dev/null; then
-            print_status "SUCCESS" "TTS info endpoint accessible"
-        else
-            print_status "WARNING" "TTS info endpoint not accessible"
-        fi
-        
-    else
-        print_status "WARNING" "Backend is not running"
-        echo "Start backend with: ./scripts/start_backend.sh"
-        echo "Then run this test again to verify API endpoints"
-    fi
-}
-
-# Function to provide troubleshooting tips
-provide_troubleshooting() {
-    echo ""
-    echo "🔧 Troubleshooting Guide"
+# System information
+show_system_info() {
+    log_header "💻 System Information"
     echo "======================"
     
-    echo "Common Issues and Solutions:"
-    echo ""
+    echo "OS: $(uname -s) $(uname -r)"
+    echo "Architecture: $(uname -m)"
     
-    echo "1. 📦 Package Import Errors:"
-    echo "   - Ensure you're in the correct virtual environment"
-    echo "   - Reinstall packages: pip install -r requirements.txt"
-    echo "   - Check Python version compatibility"
-    echo ""
-    
-    echo "2. 🎤 DeepSpeech Issues:"
-    echo "   - Python 3.8-3.10 required (not 3.11+)"
-    echo "   - Download models manually if wget failed"
-    echo "   - Check system dependencies: sudo apt install sox libsox-dev"
-    echo ""
-    
-    echo "3. 🔊 Kokoro TTS Issues:"
-    echo "   - Python 3.9+ required"
-    echo "   - GPU drivers needed for CUDA support"
-    echo "   - Fallback to pyttsx3 if Kokoro fails"
-    echo ""
-    
-    echo "4. 🌐 API Issues:"
-    echo "   - Check if backend is running: curl http://localhost:8000/health"
-    echo "   - Verify port 8000 is not in use: lsof -i :8000"
-    echo "   - Check backend logs for errors"
-    echo ""
-    
-    echo "5. 🔄 Environment Issues:"
-    echo "   - Clean restart: rm -rf venv_* && ./scripts/cleanup_and_setup.sh"
-    echo "   - Check system dependencies: ./scripts/install_system_deps.sh"
-    echo "   - Verify permissions on directories"
-    echo ""
-}
-
-# Main execution
-main() {
-    echo "Starting comprehensive environment testing..."
-    echo ""
-    
-    # Initialize counters
-    total_tests=0
-    passed_tests=0
-    
-    # Test STT environment
-    if test_stt_environment; then
-        ((passed_tests++))
+    if command -v lsb_release &> /dev/null; then
+        echo "Distribution: $(lsb_release -d | cut -f2)"
     fi
-    ((total_tests++))
     
-    # Test TTS environment
-    if test_tts_environment; then
-        ((passed_tests++))
-    fi
-    ((total_tests++))
+    echo "Python locations:"
+    for cmd in python python3 python3.8 python3.9 python3.10 python3.11; do
+        if command -v $cmd &> /dev/null; then
+            echo "  $cmd: $(which $cmd) ($(COLUMNS=1000 $cmd --version 2>&1))"
+        fi
+    done
     
-    # Test backend integration
-    if test_backend_integration; then
-        ((passed_tests++))
-    fi
-    ((total_tests++))
+    echo "Memory: $(free -h 2>/dev/null | grep Mem || echo 'N/A')"
+    echo "Disk space: $(df -h . | tail -1 | awk '{print $4 " available"}')"
     
-    # Test API endpoints
-    test_api_endpoints
-    ((total_tests++))
-    
-    # Final results
-    echo ""
-    echo "🎯 Test Results Summary"
-    echo "====================="
-    echo "Tests passed: $passed_tests/$total_tests"
-    
-    if [ $passed_tests -eq $total_tests ]; then
-        print_status "SUCCESS" "All core tests passed! 🎉"
-        echo ""
-        echo "🚀 Ready to start your voice assistant!"
-        echo "Next steps:"
-        echo "1. Start backend: ./scripts/start_backend.sh"
-        echo "2. Start frontend: ./scripts/start_frontend.sh"
-        echo "3. Open http://localhost:3000 in your browser"
+    # GPU information
+    if command -v nvidia-smi &> /dev/null; then
+        echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -1)"
     else
-        print_status "WARNING" "Some tests failed. Check the troubleshooting guide below."
-        provide_troubleshooting
+        echo "GPU: No NVIDIA GPU detected"
     fi
     
-    echo ""
-    echo "📝 Environment info saved to: logs/test_results.txt"
-    
-    # Save test results
-    mkdir -p logs
-    {
-        echo "Valper AI Environment Test Results"
-        echo "================================="
-        echo "Date: $(date)"
-        echo "Tests passed: $passed_tests/$total_tests"
-        echo ""
-        echo "Environment details:"
-        echo "- STT Environment: $([ -d venv_stt ] && echo "Present" || echo "Missing")"
-        echo "- TTS Environment: $([ -d venv_tts ] && echo "Present" || echo "Missing")"
-        echo "- Backend: $([ -f backend/app/main.py ] && echo "Present" || echo "Missing")"
-        echo "- System: $(uname -a)"
-    } > logs/test_results.txt
+    echo
 }
 
-# Run main function
-main "$@" 
+# Troubleshooting guide
+show_troubleshooting() {
+    log_header "🔧 Troubleshooting Guide"
+    echo "========================="
+    
+    echo "Common issues and solutions:"
+    echo
+    echo "1. FFmpeg not found:"
+    echo "   Ubuntu/Debian: sudo apt-get install ffmpeg"
+    echo "   macOS: brew install ffmpeg"
+    echo "   Windows: Use chocolatey or download from ffmpeg.org"
+    echo
+    echo "2. Python version issues:"
+    echo "   Ensure Python 3.8+ is installed"
+    echo "   Use pyenv to manage multiple Python versions"
+    echo
+    echo "3. Whisper model download issues:"
+    echo "   Check internet connection"
+    echo "   Try smaller model first: whisper --model tiny"
+    echo
+    echo "4. Memory issues:"
+    echo "   Use smaller Whisper models (tiny, base)"
+    echo "   Close other applications"
+    echo
+    echo "5. Permission issues:"
+    echo "   Check file permissions on virtual environments"
+    echo "   Ensure user has write access to project directory"
+    echo
+    echo "For more help, check the project documentation or GitHub issues."
+    echo
+}
+
+# Main function
+main() {
+    echo "🧪 Valper AI Environment Testing Suite"
+    echo "======================================"
+    echo
+    
+    show_system_info
+    
+    # Test environments
+    test_stt_environment
+    test_tts_environment
+    test_backend_environment
+    
+    # Run integration test
+    run_integration_test
+    
+    echo "🎉 Testing completed!"
+    echo
+    echo "Next steps:"
+    echo "  • If all tests passed: run scripts/start_backend.sh"
+    echo "  • If tests failed: check troubleshooting guide below"
+    echo
+    
+    show_troubleshooting
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --stt-only)
+            test_stt_environment
+            exit 0
+            ;;
+        --tts-only)
+            test_tts_environment
+            exit 0
+            ;;
+        --backend-only)
+            test_backend_environment
+            exit 0
+            ;;
+        --integration-only)
+            run_integration_test
+            exit 0
+            ;;
+        --help)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --stt-only         Test only STT environment"
+            echo "  --tts-only         Test only TTS environment"
+            echo "  --backend-only     Test only backend environment"
+            echo "  --integration-only Run only integration tests"
+            echo "  --help             Show this help message"
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+# Run main function if no specific options provided
+main 

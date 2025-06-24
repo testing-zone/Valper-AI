@@ -1,212 +1,206 @@
 #!/bin/bash
 
-# Valper AI Assistant - STT Environment Setup Script
-# This script sets up a dedicated Python environment for DeepSpeech STT
+# Valper AI - STT Environment Setup using OpenAI Whisper
+# Modern, reliable replacement for DeepSpeech
 
 set -e
 
-echo "🎤 Setting up STT (DeepSpeech) environment..."
+echo "🎯 Setting up STT Environment with OpenAI Whisper..."
+echo "=============================================="
 
-# Function to find the best Python 3.8+ version for DeepSpeech
-find_python38() {
-    for python_cmd in python3.8 python3.9 python3.10 python3; do
-        if command -v "$python_cmd" &> /dev/null; then
-            version=$($python_cmd --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1,2)
-            # DeepSpeech works best with Python 3.8-3.10
-            if [ "$(printf '%s\n3.8\n' "$version" | sort -V | head -n1)" = "3.8" ] && [ "$(printf '%s\n3.11\n' "$version" | sort -V | head -n1)" = "$version" ]; then
-                echo "$python_cmd"
-                return 0
-            fi
-        fi
-    done
-    return 1
+# Configuration
+STT_VENV_DIR="venv_stt"
+PYTHON_MIN_VERSION="3.8"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Functions
+log_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
-# Check if STT environment already exists
-if [ -d "venv_stt" ]; then
-    echo "🗑️  Removing existing STT environment for clean setup..."
-    rm -rf venv_stt
-fi
+log_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
 
-# Find suitable Python version
-echo "🔍 Searching for Python 3.8-3.10 for DeepSpeech..."
-if PYTHON_CMD=$(find_python38); then
-    python_version=$($PYTHON_CMD --version 2>&1 | cut -d' ' -f2)
-    echo "✅ Found Python $python_version at: $(which $PYTHON_CMD)"
-else
-    echo "❌ Python 3.8-3.10 not found!"
-    echo "DeepSpeech requires Python 3.8-3.10. Installing Python 3.9..."
+log_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+log_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+# Check Python version
+check_python_version() {
+    log_info "Checking Python version..."
     
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        sudo apt update
-        sudo apt install -y software-properties-common
-        sudo add-apt-repository ppa:deadsnakes/ppa -y
-        sudo apt update
-        sudo apt install -y python3.9 python3.9-venv python3.9-dev python3.9-distutils
-        PYTHON_CMD=python3.9
+    if command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v python &> /dev/null; then
+        PYTHON_CMD="python"
     else
-        echo "Please install Python 3.9 manually and run this script again"
+        log_error "Python is not installed"
         exit 1
     fi
-fi
-
-# Create STT virtual environment
-echo "🏗️  Creating STT virtual environment with $PYTHON_CMD..."
-$PYTHON_CMD -m venv venv_stt --prompt "valper-stt"
-echo "✅ STT virtual environment created"
-
-# Activate STT environment
-echo "🔄 Activating STT environment..."
-source venv_stt/bin/activate
-
-# Verify environment
-echo "📍 STT Environment info:"
-echo "  Python path: $(which python)"
-echo "  Python version: $(python --version)"
-echo "  Pip path: $(which pip)"
-
-# Upgrade build tools
-echo "⬆️  Upgrading build tools..."
-python -m pip install --upgrade pip setuptools wheel
-
-# Install system dependencies for DeepSpeech
-echo "🔧 Installing system dependencies for STT..."
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    sudo apt-get update
-    sudo apt-get install -y \
-        build-essential \
-        libffi-dev \
-        python3-dev \
-        pkg-config \
-        libsox-fmt-all \
-        sox \
-        libsox-dev \
-        wget \
-        curl
-fi
-
-# Install NumPy first (DeepSpeech dependency)
-echo "📦 Installing NumPy for DeepSpeech..."
-pip install "numpy>=1.14.0,<1.20.0"
-
-# Install DeepSpeech 0.9.3 (stable and available)
-echo "📦 Installing DeepSpeech 0.9.3..."
-pip install "numpy>=1.14.0,<1.20.0"
-
-# Install DeepSpeech from PyPI - it's available!
-echo "🎯 Installing DeepSpeech 0.9.3 from PyPI..."
-if pip install deepspeech==0.9.3; then
-    echo "✅ DeepSpeech 0.9.3 installed successfully from PyPI"
-else
-    echo "⚠️  PyPI installation failed, trying alternative sources..."
     
-    # Method 1: Try direct wheel installation
-    python_version_short=$(python --version | cut -d' ' -f2 | cut -d'.' -f1,2 | tr -d '.')
-    platform="linux_x86_64"
-
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        platform="macosx_10_10_x86_64"
-    fi
-
-    deepspeech_wheel_url="https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-cp${python_version_short}-cp${python_version_short}-${platform}.whl"
-
-    echo "🔗 Trying wheel URL: $deepspeech_wheel_url"
-    if pip install "$deepspeech_wheel_url"; then
-        echo "✅ DeepSpeech installed from GitHub wheel"
+    PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | awk '{print $2}')
+    log_info "Found Python version: $PYTHON_VERSION"
+    
+    # Extract major and minor version numbers
+    MAJOR_VERSION=$(echo $PYTHON_VERSION | cut -d'.' -f1)
+    MINOR_VERSION=$(echo $PYTHON_VERSION | cut -d'.' -f2)
+    
+    # Check if version is >= 3.8
+    if [ "$MAJOR_VERSION" -eq 3 ] && [ "$MINOR_VERSION" -ge 8 ]; then
+        log_success "Python version is compatible (≥3.8)"
     else
-        echo "❌ All DeepSpeech installation methods failed"
-        echo "📝 Installing fallback STT service with SpeechRecognition..."
-        pip install SpeechRecognition pyaudio
+        log_error "Python version must be 3.8 or higher. Current: $PYTHON_VERSION"
+        exit 1
     fi
-fi
+}
 
-# Install additional STT dependencies
-echo "📦 Installing additional STT dependencies..."
-cat > requirements_stt.txt << 'EOF'
-# Audio processing
-soundfile>=0.10.0
-librosa>=0.8.0
-scipy>=1.5.0
-webrtcvad>=2.0.10
+# Install FFmpeg if not present
+install_ffmpeg() {
+    log_info "Checking FFmpeg installation..."
+    
+    if command -v ffmpeg &> /dev/null; then
+        log_success "FFmpeg is already installed"
+        return 0
+    fi
+    
+    log_warning "FFmpeg not found. Attempting to install..."
+    
+    case "$(uname -s)" in
+        Linux*)
+            if command -v apt-get &> /dev/null; then
+                sudo apt-get update && sudo apt-get install -y ffmpeg
+            elif command -v yum &> /dev/null; then
+                sudo yum install -y ffmpeg
+            elif command -v dnf &> /dev/null; then
+                sudo dnf install -y ffmpeg
+            else
+                log_error "Cannot install FFmpeg automatically. Please install manually."
+                exit 1
+            fi
+            ;;
+        Darwin*)
+            if command -v brew &> /dev/null; then
+                brew install ffmpeg
+            else
+                log_error "Homebrew not found. Please install FFmpeg manually: brew install ffmpeg"
+                exit 1
+            fi
+            ;;
+        *)
+            log_error "Unsupported operating system. Please install FFmpeg manually."
+            exit 1
+            ;;
+    esac
+    
+    if command -v ffmpeg &> /dev/null; then
+        log_success "FFmpeg installed successfully"
+    else
+        log_error "FFmpeg installation failed"
+        exit 1
+    fi
+}
 
-# Utilities
-python-dotenv>=0.19.0
-asyncio-mqtt>=0.11.0
+# Create virtual environment
+create_virtual_environment() {
+    log_info "Creating STT virtual environment..."
+    
+    if [ -d "$STT_VENV_DIR" ]; then
+        log_warning "Removing existing STT environment..."
+        rm -rf "$STT_VENV_DIR"
+    fi
+    
+    $PYTHON_CMD -m venv "$STT_VENV_DIR"
+    log_success "Virtual environment created: $STT_VENV_DIR"
+}
 
-# For audio streaming
-pyaudio>=0.2.11
-EOF
+# Install Python packages
+install_python_packages() {
+    log_info "Installing Python packages..."
+    
+    # Activate virtual environment
+    source "$STT_VENV_DIR/bin/activate"
+    
+    # Upgrade pip and setuptools
+    pip install --upgrade pip setuptools wheel
+    
+    # Install core packages
+    log_info "Installing OpenAI Whisper..."
+    pip install openai-whisper
+    
+    # Install additional useful packages
+    log_info "Installing additional audio processing packages..."
+    pip install librosa soundfile
+    
+    # Install FastAPI integration packages
+    log_info "Installing web service packages..."
+    pip install fastapi uvicorn python-multipart
+    
+    log_success "All packages installed successfully"
+}
 
-pip install -r requirements_stt.txt
+# Test installation
+test_installation() {
+    log_info "Testing Whisper installation..."
+    
+    source "$STT_VENV_DIR/bin/activate"
+    
+    # Test import
+    if python -c "import whisper; print('Whisper version:', whisper.__version__)" 2>/dev/null; then
+        log_success "Whisper installation test passed"
+    else
+        log_error "Whisper installation test failed"
+        exit 1
+    fi
+    
+    # Test FFmpeg integration
+    if python -c "import whisper; print('FFmpeg test passed')" 2>/dev/null; then
+        log_success "FFmpeg integration test passed"
+    else
+        log_error "FFmpeg integration test failed"
+        exit 1
+    fi
+}
 
-# Download DeepSpeech models
-echo "📥 Downloading DeepSpeech models..."
-mkdir -p models/stt
+# Main execution
+main() {
+    echo "🎯 Starting STT Environment Setup..."
+    echo "===================================="
+    echo
+    
+    check_python_version
+    install_ffmpeg
+    create_virtual_environment
+    install_python_packages
+    test_installation
+    
+    echo
+    log_success "STT Environment setup completed successfully!"
+    echo
+    echo "📋 Summary:"
+    echo "   • Python version: $PYTHON_VERSION"
+    echo "   • Virtual environment: $STT_VENV_DIR"
+    echo "   • STT Engine: OpenAI Whisper (latest)"
+    echo "   • FFmpeg: Installed and configured"
+    echo
+    echo "🚀 To activate the environment:"
+    echo "   source $STT_VENV_DIR/bin/activate"
+    echo
+    echo "🎤 To test Whisper:"
+    echo "   whisper --help"
+    echo "   whisper audio_file.mp3 --model base"
+    echo
+}
 
-# Download model files
-echo "🔗 Downloading DeepSpeech pre-trained model..."
-cd models/stt
-
-if [ ! -f "deepspeech-0.9.3-models.pbmm" ]; then
-    wget -O deepspeech-0.9.3-models.pbmm \
-        "https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.pbmm" || \
-        echo "⚠️  Could not download model file"
-fi
-
-if [ ! -f "deepspeech-0.9.3-models.scorer" ]; then
-    wget -O deepspeech-0.9.3-models.scorer \
-        "https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.scorer" || \
-        echo "⚠️  Could not download scorer file"
-fi
-
-cd ../..
-
-# Test STT installation
-echo "🔍 Testing STT installation..."
-python -c "
-try:
-    import deepspeech
-    print('✅ DeepSpeech imported successfully')
-    print(f'✅ DeepSpeech version: {deepspeech.__version__}')
-except ImportError as e:
-    print('❌ DeepSpeech import failed:', e)
-    print('📝 Fallback to SpeechRecognition available')
-
-try:
-    import soundfile
-    print('✅ SoundFile imported successfully')
-except ImportError as e:
-    print('❌ SoundFile import failed:', e)
-
-try:
-    import numpy
-    print('✅ NumPy imported successfully')
-    print(f'✅ NumPy version: {numpy.__version__}')
-except ImportError as e:
-    print('❌ NumPy import failed:', e)
-"
-
-# Create STT service activation script
-echo "📝 Creating STT activation script..."
-cat > activate_stt.sh << 'EOF'
-#!/bin/bash
-echo "🎤 Activating STT (DeepSpeech) environment..."
-source venv_stt/bin/activate
-echo "✅ STT environment activated!"
-echo "📍 Python: $(which python)"
-echo "📍 Models directory: $(pwd)/models/stt"
-echo ""
-EOF
-chmod +x activate_stt.sh
-
-echo ""
-echo "🎉 STT Environment setup complete!"
-echo "================================="
-echo "📍 STT Environment: $(pwd)/venv_stt"
-echo "📍 Python version: $(python --version)"
-echo "📍 Models directory: $(pwd)/models/stt"
-echo ""
-echo "To activate STT environment:"
-echo "  source ./activate_stt.sh"
-echo ""
-echo "Next: Run ./scripts/setup_tts_environment.sh" 
+# Run main function
+main "$@" 

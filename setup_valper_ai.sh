@@ -1,211 +1,451 @@
 #!/bin/bash
 
-# Valper AI Assistant - Master Setup Script
-# This script orchestrates the complete setup process for Valper AI
+# Valper AI - Master Setup Script
+# Sets up complete voice assistant with OpenAI Whisper (STT) and Kokoro TTS
 
 set -e
-
-echo "🤖 Valper AI Assistant - Complete Setup"
-echo "======================================="
-echo "This script will set up your complete voice assistant with:"
-echo "🎤 STT: DeepSpeech (Python 3.8-3.10)"
-echo "🔊 TTS: Kokoro (Python 3.9+)"
-echo "🚀 Backend: FastAPI with dual environment support"
-echo "🌐 Frontend: React with modern UI"
-echo ""
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-print_step() {
-    echo -e "${BLUE}📍 Step $1: $2${NC}"
+# Project configuration
+PROJECT_NAME="Valper AI"
+VERSION="2.0.0"
+STT_ENGINE="OpenAI Whisper"
+TTS_ENGINE="Kokoro TTS"
+
+# Functions for colored output
+log_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
-print_success() {
+log_success() {
     echo -e "${GREEN}✅ $1${NC}"
 }
 
-print_warning() {
+log_warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
-print_error() {
+log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-# Function to confirm continuation
-confirm_step() {
-    echo ""
-    read -p "Press Enter to continue, or Ctrl+C to exit..."
-    echo ""
+log_step() {
+    echo -e "${PURPLE}🔄 $1${NC}"
 }
 
-# Main setup process
-main() {
-    print_step "1" "Pre-setup verification"
-    echo "Checking system requirements and project structure..."
+log_header() {
+    echo -e "${CYAN}$1${NC}"
+}
+
+# Header
+show_header() {
+    clear
+    echo -e "${CYAN}"
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║                                                               ║"
+    echo "║                       🎤 VALPER AI 🤖                         ║"
+    echo "║                                                               ║"
+    echo "║           Your Advanced Voice Assistant Setup v2.0           ║"
+    echo "║                                                               ║"
+    echo "║  🎯 OpenAI Whisper (STT) + Kokoro TTS + FastAPI + React     ║"
+    echo "║                                                               ║"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo
+}
+
+# System requirements check
+check_system_requirements() {
+    log_header "📋 Checking System Requirements"
+    echo "================================"
     
-    # Check if we're in the right directory
-    if [ ! -f "backend/app/main.py" ]; then
-        print_error "Please run this script from the Valper-AI root directory"
-        exit 1
-    fi
+    # Check OS
+    OS=$(uname -s)
+    log_info "Operating System: $OS"
     
-    # Check for required tools
-    for tool in wget curl git python3; do
-        if ! command -v "$tool" &> /dev/null; then
-            print_error "$tool is required but not installed"
+    # Check Python
+    if command -v python3 &> /dev/null; then
+        PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+        log_success "Python 3 found: $PYTHON_VERSION"
+        
+        # Check if version is >= 3.8
+        MAJOR_VERSION=$(echo $PYTHON_VERSION | cut -d'.' -f1)
+        MINOR_VERSION=$(echo $PYTHON_VERSION | cut -d'.' -f2)
+        
+        if [ "$MAJOR_VERSION" -eq 3 ] && [ "$MINOR_VERSION" -ge 8 ]; then
+            log_success "Python version is compatible (≥3.8)"
+        else
+            log_error "Python 3.8+ required. Current: $PYTHON_VERSION"
             exit 1
         fi
-    done
-    
-    print_success "System requirements check passed"
-    confirm_step
-    
-    # Step 2: Clean setup
-    print_step "2" "Clean environment setup"
-    echo "Removing any existing environments and starting fresh..."
-    
-    if [ -f "scripts/cleanup_and_setup.sh" ]; then
-        chmod +x scripts/cleanup_and_setup.sh
-        ./scripts/cleanup_and_setup.sh
     else
-        print_error "Cleanup script not found!"
+        log_error "Python 3 not found. Please install Python 3.8+ first."
         exit 1
     fi
     
-    print_success "Environment setup completed"
-    confirm_step
+    # Check Git
+    if command -v git &> /dev/null; then
+        log_success "Git found: $(git --version)"
+    else
+        log_warning "Git not found (recommended for development)"
+    fi
     
-    # Step 3: Test environments
-    print_step "3" "Environment testing and validation"
-    echo "Testing that both STT and TTS environments work correctly..."
+    # Check Node.js (for frontend)
+    if command -v node &> /dev/null; then
+        NODE_VERSION=$(node --version)
+        log_success "Node.js found: $NODE_VERSION"
+    else
+        log_warning "Node.js not found (required for frontend)"
+        echo "Install from: https://nodejs.org/"
+    fi
     
+    # Check available disk space
+    AVAILABLE_SPACE=$(df -h . | tail -1 | awk '{print $4}')
+    log_info "Available disk space: $AVAILABLE_SPACE"
+    
+    echo
+}
+
+# Confirmation prompt
+get_user_confirmation() {
+    log_header "🚀 Ready to Setup Valper AI"
+    echo "============================="
+    echo
+    echo "This will install:"
+    echo "  • 🎤 OpenAI Whisper (Speech-to-Text)"
+    echo "  • 🔊 Kokoro TTS (Text-to-Speech)"
+    echo "  • 🖥️  FastAPI Backend"
+    echo "  • 🌐 React Frontend"
+    echo "  • 🐳 Docker Configuration"
+    echo
+    echo "Estimated installation time: 10-15 minutes"
+    echo "Required disk space: ~2-3 GB"
+    echo
+    
+    while true; do
+        read -p "Continue with installation? (y/n): " yn
+        case $yn in
+            [Yy]* ) 
+                log_success "Starting installation..."
+                break
+                ;;
+            [Nn]* ) 
+                log_info "Installation cancelled by user"
+                exit 0
+                ;;
+            * ) 
+                echo "Please answer yes (y) or no (n)"
+                ;;
+        esac
+    done
+    echo
+}
+
+# Step 1: Environment Setup
+setup_environments() {
+    log_header "🏗️  Step 1: Setting up Environments"
+    echo "==================================="
+    
+    log_step "Setting up STT environment with OpenAI Whisper..."
+    if [ -f "scripts/setup_stt_environment.sh" ]; then
+        chmod +x scripts/setup_stt_environment.sh
+        ./scripts/setup_stt_environment.sh
+        log_success "STT environment setup completed"
+    else
+        log_error "STT setup script not found"
+        exit 1
+    fi
+    
+    echo
+    log_step "Setting up TTS environment with Kokoro..."
+    if [ -f "scripts/setup_tts_environment.sh" ]; then
+        chmod +x scripts/setup_tts_environment.sh
+        ./scripts/setup_tts_environment.sh
+        log_success "TTS environment setup completed"
+    else
+        log_error "TTS setup script not found"
+        exit 1
+    fi
+    
+    echo
+}
+
+# Step 2: Testing
+run_tests() {
+    log_header "🧪 Step 2: Testing Environments"
+    echo "==============================="
+    
+    log_step "Running comprehensive environment tests..."
     if [ -f "scripts/test_environments.sh" ]; then
         chmod +x scripts/test_environments.sh
         ./scripts/test_environments.sh
+        log_success "Environment tests completed"
     else
-        print_warning "Test script not found, skipping tests"
-    fi
-    
-    print_success "Environment testing completed"
-    confirm_step
-    
-    # Step 4: Start backend
-    print_step "4" "Backend server startup"
-    echo "Starting the backend server..."
-    echo "This will run in the background so you can continue with frontend setup."
-    
-    if [ -f "scripts/start_backend.sh" ]; then
-        chmod +x scripts/start_backend.sh
-        
-        echo "Starting backend in background..."
-        nohup ./scripts/start_backend.sh > logs/backend.log 2>&1 &
-        backend_pid=$!
-        echo $backend_pid > logs/backend.pid
-        
-        # Wait for backend to start
-        echo "Waiting for backend to start..."
-        sleep 10
-        
-        # Check if backend is running
-        if curl -s http://localhost:8000/health > /dev/null 2>&1; then
-            print_success "Backend is running on http://localhost:8000"
-        else
-            print_warning "Backend may not be fully ready yet (check logs/backend.log)"
-        fi
-    else
-        print_error "Backend start script not found!"
+        log_error "Test script not found"
         exit 1
     fi
     
-    confirm_step
-    
-    # Step 5: Setup frontend
-    print_step "5" "Frontend setup and startup"
-    echo "Setting up and starting the React frontend..."
-    
-    if [ -f "scripts/start_frontend.sh" ]; then
-        chmod +x scripts/start_frontend.sh
-        
-        echo "Installing frontend dependencies..."
-        cd frontend
-        if command -v npm &> /dev/null; then
-            npm install
-        elif command -v yarn &> /dev/null; then
-            yarn install
-        else
-            print_error "npm or yarn is required for frontend setup"
-            echo "Install Node.js and npm: https://nodejs.org/"
-            exit 1
-        fi
-        cd ..
-        
-        print_success "Frontend dependencies installed"
-        
-        echo "Frontend will be started in a new terminal window."
-        echo "If it doesn't open automatically, run: ./scripts/start_frontend.sh"
-        
-        # Try to open frontend in new terminal
-        if command -v gnome-terminal &> /dev/null; then
-            gnome-terminal -- bash -c "./scripts/start_frontend.sh; exec bash"
-        elif command -v xterm &> /dev/null; then
-            xterm -e "./scripts/start_frontend.sh" &
-        else
-            echo "Please open a new terminal and run: ./scripts/start_frontend.sh"
-        fi
-        
-    else
-        print_warning "Frontend start script not found, manual setup required"
-    fi
-    
-    # Step 6: Final instructions
-    print_step "6" "Setup completion and next steps"
-    echo ""
-    echo "🎉 Valper AI Assistant Setup Complete!"
-    echo "======================================"
-    echo ""
-    echo "🌐 Access your voice assistant:"
-    echo "   Frontend: http://localhost:3000"
-    echo "   Backend API: http://localhost:8000"
-    echo "   API Documentation: http://localhost:8000/docs"
-    echo ""
-    echo "🔧 Environment Details:"
-    echo "   STT (DeepSpeech): venv_stt/"
-    echo "   TTS (Kokoro): venv_tts/"
-    echo "   Backend: venv_backend/"
-    echo ""
-    echo "📝 Log Files:"
-    echo "   Backend: logs/backend.log"
-    echo "   Test Results: logs/test_results.txt"
-    echo ""
-    echo "🎤 Usage Instructions:"
-    echo "1. Open http://localhost:3000 in your browser"
-    echo "2. Click the microphone button to start recording"
-    echo "3. Speak your message"
-    echo "4. The assistant will transcribe and respond with speech"
-    echo ""
-    echo "🔧 Management Commands:"
-    echo "   Stop backend: kill \$(cat logs/backend.pid)"
-    echo "   Restart backend: ./scripts/start_backend.sh"
-    echo "   Test environments: ./scripts/test_environments.sh"
-    echo ""
-    echo "💡 Troubleshooting:"
-    echo "   If issues occur, check logs/ directory for error details"
-    echo "   Run ./scripts/test_environments.sh for diagnostics"
-    echo ""
-    print_success "Your Valper AI Assistant is ready! 🚀"
+    echo
 }
 
-# Create logs directory
+# Step 3: Backend Setup
+setup_backend() {
+    log_header "🖥️  Step 3: Setting up Backend"
+    echo "============================="
+    
+    log_step "Creating backend environment..."
+    if [ ! -d "venv_backend" ]; then
+        python3 -m venv venv_backend
+        source venv_backend/bin/activate
+        pip install --upgrade pip
+        
+        # Install backend dependencies
+        log_step "Installing backend dependencies..."
+        pip install fastapi uvicorn python-multipart
+        
+        # Install additional dependencies if requirements.txt exists
+        if [ -f "backend/requirements.txt" ]; then
+            pip install -r backend/requirements.txt
+        fi
+        
+        deactivate
+        log_success "Backend environment created"
+    else
+        log_success "Backend environment already exists"
+    fi
+    
+    echo
+}
+
+# Step 4: Frontend Setup
+setup_frontend() {
+    log_header "🌐 Step 4: Setting up Frontend"
+    echo "=============================="
+    
+    if command -v npm &> /dev/null; then
+        log_step "Installing frontend dependencies..."
+        cd frontend
+        
+        if [ -f "package.json" ]; then
+            npm install
+            log_success "Frontend dependencies installed"
+        else
+            log_warning "Frontend package.json not found"
+        fi
+        
+        cd ..
+    else
+        log_warning "npm not found. Skipping frontend setup."
+        log_info "Install Node.js from https://nodejs.org/ to setup frontend"
+    fi
+    
+    echo
+}
+
+# Step 5: Configuration
+setup_configuration() {
+    log_header "⚙️  Step 5: Configuration"
+    echo "========================"
+    
+    # Create .env file if it doesn't exist
+    if [ ! -f ".env" ]; then
+        log_step "Creating environment configuration..."
+        cat > .env << EOF
+# Valper AI Configuration
+PROJECT_NAME=Valper AI
+VERSION=2.0.0
+
+# STT Configuration (OpenAI Whisper)
+STT_ENGINE=whisper
+WHISPER_MODEL=base
+
+# TTS Configuration (Kokoro)
+TTS_ENGINE=kokoro
+TTS_VOICE=default
+
+# API Configuration
+API_HOST=localhost
+API_PORT=8000
+
+# Frontend Configuration
+FRONTEND_PORT=3000
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=logs/valper.log
+
+# Performance
+MAX_AUDIO_DURATION=300
+MAX_TEXT_LENGTH=1000
+EOF
+        log_success "Configuration file created: .env"
+    else
+        log_success "Configuration file already exists: .env"
+    fi
+    
+    # Create logs directory
+    mkdir -p logs
+    log_success "Logs directory created"
+    
+    echo
+}
+
+# Step 6: Docker Setup (Optional)
+setup_docker() {
+    log_header "🐳 Step 6: Docker Setup (Optional)"
+    echo "=================================="
+    
+    if command -v docker &> /dev/null; then
+        log_success "Docker found: $(docker --version)"
+        
+        if [ -f "docker-compose.yml" ]; then
+            log_step "Docker configuration ready"
+            echo "  • To build: docker-compose build"
+            echo "  • To run: docker-compose up"
+        else
+            log_warning "docker-compose.yml not found"
+        fi
+    else
+        log_warning "Docker not found"
+        log_info "Install Docker from https://docker.com/ for containerized deployment"
+    fi
+    
+    echo
+}
+
+# Step 7: Final verification
+final_verification() {
+    log_header "✅ Final Verification"
+    echo "====================="
+    
+    log_step "Checking installation..."
+    
+    # Check environments
+    if [ -d "venv_stt" ]; then
+        log_success "STT environment ready"
+    else
+        log_error "STT environment missing"
+    fi
+    
+    if [ -d "venv_tts" ]; then
+        log_success "TTS environment ready"
+    else
+        log_error "TTS environment missing"
+    fi
+    
+    if [ -d "venv_backend" ]; then
+        log_success "Backend environment ready"
+    else
+        log_warning "Backend environment missing"
+    fi
+    
+    # Check key files
+    key_files=(
+        "backend/main.py"
+        "backend/services/stt_service.py"
+        "backend/services/tts_service.py"
+        "frontend/package.json"
+        ".env"
+    )
+    
+    for file in "${key_files[@]}"; do
+        if [ -f "$file" ]; then
+            log_success "Found: $file"
+        else
+            log_warning "Missing: $file"
+        fi
+    done
+    
+    echo
+}
+
+# Success message and next steps
+show_success() {
+    log_header "🎉 Installation Complete!"
+    echo "=========================="
+    echo
+    echo "🎤 Valper AI is now ready to use!"
+    echo
+    echo "📋 What was installed:"
+    echo "  ✅ OpenAI Whisper (Speech-to-Text)"
+    echo "  ✅ Kokoro TTS (Text-to-Speech)"
+    echo "  ✅ FastAPI Backend"
+    echo "  ✅ React Frontend"
+    echo "  ✅ Environment Configuration"
+    echo
+    echo "🚀 Quick Start:"
+    echo "  1. Start Backend:"
+    echo "     ./scripts/start_backend.sh"
+    echo
+    echo "  2. Start Frontend (in new terminal):"
+    echo "     ./scripts/start_frontend.sh"
+    echo
+    echo "  3. Open your browser:"
+    echo "     http://localhost:3000"
+    echo
+    echo "🔧 Useful Commands:"
+    echo "  • Test environments: ./scripts/test_environments.sh"
+    echo "  • View logs: tail -f logs/valper.log"
+    echo "  • Update models: ./scripts/setup_models.sh"
+    echo
+    echo "📚 Documentation:"
+    echo "  • API docs: http://localhost:8000/docs"
+    echo "  • Project README: ./README.md"
+    echo
+    echo "🎯 Enjoy your new AI voice assistant!"
+    echo
+}
+
+# Error handling
+handle_error() {
+    local exit_code=$?
+    log_error "Setup failed with exit code: $exit_code"
+    echo
+    echo "🔧 Troubleshooting:"
+    echo "  • Check logs: tail -f logs/setup.log"
+    echo "  • Run tests: ./scripts/test_environments.sh"
+    echo "  • Clean restart: rm -rf venv_* && ./setup_valper_ai.sh"
+    echo
+    exit $exit_code
+}
+
+# Set up error handling
+trap handle_error ERR
+
+# Create logs directory and setup logging
 mkdir -p logs
+exec 1> >(tee -a logs/setup.log)
+exec 2> >(tee -a logs/setup.log >&2)
 
-# Run main setup
-main "$@"
+# Main execution
+main() {
+    show_header
+    check_system_requirements
+    get_user_confirmation
+    
+    log_info "Starting Valper AI setup at $(date)"
+    echo
+    
+    setup_environments
+    run_tests
+    setup_backend
+    setup_frontend
+    setup_configuration
+    setup_docker
+    final_verification
+    
+    show_success
+    
+    log_info "Setup completed successfully at $(date)"
+}
 
-echo ""
-echo "Setup script completed. Enjoy your AI assistant!" 
+# Execute main function
+main "$@" 
