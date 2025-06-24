@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Paper,
@@ -16,10 +16,7 @@ import {
   ListItemText
 } from '@mui/material';
 import {
-  Mic,
-  MicOff,
   VolumeUp,
-  Send,
   Psychology
 } from '@mui/icons-material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
@@ -56,7 +53,6 @@ const theme = createTheme({
 });
 
 function App() {
-  const [isListening, setIsListening] = useState(false);
   const [conversation, setConversation] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState('Ready');

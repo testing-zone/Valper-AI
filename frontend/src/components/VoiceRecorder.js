@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Button, Box } from '@mui/material';
-import { Mic, MicOff, Stop } from '@mui/icons-material';
+import { Mic, Stop } from '@mui/icons-material';
 
 const VoiceRecorder = ({ onRecordingComplete, disabled, isProcessing }) => {
   const [isRecording, setIsRecording] = useState(false);
