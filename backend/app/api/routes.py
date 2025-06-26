@@ -6,6 +6,7 @@ from app.services.tts_service import TTSService
 import tempfile
 import os
 import logging
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,16 @@ class TTSRequest(BaseModel):
 class ConversationRequest(BaseModel):
     message: str
 
+@router.get("/test")
+async def test_endpoint():
+    """Simple test endpoint to verify the API is working"""
+    return {
+        "message": "API is working!",
+        "timestamp": str(datetime.datetime.now()),
+        "stt_available": stt_service is not None,
+        "tts_available": tts_service is not None
+    }
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint for API monitoring"""
@@ -34,8 +45,11 @@ async def health_check():
 @router.post("/stt")
 async def speech_to_text(audio: UploadFile = File(...)):
     """Convert speech to text"""
-    if not stt_service or not stt_service.is_ready:
+    if not stt_service:
         raise HTTPException(status_code=503, detail="STT service not available")
+    
+    if not stt_service.is_ready:
+        raise HTTPException(status_code=503, detail="STT service not ready")
     
     if not audio.content_type.startswith('audio/'):
         raise HTTPException(status_code=400, detail="File must be an audio file")
@@ -43,6 +57,9 @@ async def speech_to_text(audio: UploadFile = File(...)):
     try:
         # Read audio file content
         content = await audio.read()
+        
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Audio file is empty")
         
         # Transcribe audio using bytes
         result = await stt_service.transcribe_audio(content)
@@ -52,15 +69,23 @@ async def speech_to_text(audio: UploadFile = File(...)):
         
         return {"text": result["text"]}
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in STT endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/tts")
 async def text_to_speech(request: TTSRequest):
     """Convert text to speech"""
-    if not tts_service or not tts_service.is_ready:
+    if not tts_service:
         raise HTTPException(status_code=503, detail="TTS service not available")
+    
+    if not tts_service.is_ready:
+        raise HTTPException(status_code=503, detail="TTS service not ready")
+    
+    if not request.text or len(request.text.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
     
     try:
         audio_file_path = await tts_service.synthesize_speech(request.text, request.voice)
@@ -68,15 +93,20 @@ async def text_to_speech(request: TTSRequest):
         if audio_file_path is None:
             raise HTTPException(status_code=500, detail="Failed to synthesize speech")
         
+        if not os.path.exists(audio_file_path):
+            raise HTTPException(status_code=500, detail="Generated audio file not found")
+        
         return FileResponse(
             audio_file_path,
             media_type='audio/wav',
             filename='speech.wav'
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in TTS endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/voices")
 async def get_voices():
@@ -109,7 +139,8 @@ async def conversation(request: ConversationRequest):
 @router.get("/audio/{filename}")
 async def get_audio(filename: str):
     """Serve generated audio files"""
-    file_path = f"temp/audio/{filename}"
+    current_dir = os.getcwd()
+    file_path = os.path.join(current_dir, 'temp', 'audio', filename)
     if os.path.exists(file_path):
         return FileResponse(file_path, media_type='audio/wav')
     else:

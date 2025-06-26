@@ -9,11 +9,10 @@ class Settings:
     
     # Model Paths
     MODELS_DIR: str = os.getenv("MODELS_DIR", "models")
-    DEEPSPEECH_MODEL_PATH: str = os.path.join(MODELS_DIR, "deepspeech-0.9.3-models.pbmm")
-    DEEPSPEECH_SCORER_PATH: str = os.path.join(MODELS_DIR, "deepspeech-0.9.3-models.scorer")
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
     
     # Audio Settings
-    TEMP_AUDIO_DIR: str = os.getenv("TEMP_AUDIO_DIR", "temp/audio")
+    TEMP_AUDIO_DIR: str = os.getenv("TEMP_AUDIO_DIR", "backend/temp/audio")
     SAMPLE_RATE: int = int(os.getenv("SAMPLE_RATE", "16000"))
     
     # CORS Settings

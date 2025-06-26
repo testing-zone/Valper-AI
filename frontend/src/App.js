@@ -23,6 +23,9 @@ import VoiceRecorder from './components/VoiceRecorder';
 import ConversationHistory from './components/ConversationHistory';
 import './App.css';
 
+// Backend API configuration
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://209.137.198.189:8000';
+
 const theme = createTheme({
   palette: {
     mode: 'dark',
@@ -62,7 +65,7 @@ function App() {
   const checkBackendHealth = async () => {
     try {
       // Add cache busting parameter
-      const response = await fetch(`/health?t=${Date.now()}`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/health?t=${Date.now()}`, {
         method: 'GET',
         headers: {
           'Cache-Control': 'no-cache',
@@ -92,7 +95,7 @@ function App() {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'audio.wav');
 
-      const sttResponse = await fetch('/api/v1/stt', {
+      const sttResponse = await fetch(`${API_BASE_URL}/api/v1/stt`, {
         method: 'POST',
         body: formData,
       });
@@ -116,7 +119,7 @@ function App() {
 
       // Get AI response
       setStatus('Generating response...');
-      const conversationResponse = await fetch('/api/v1/conversation', {
+      const conversationResponse = await fetch(`${API_BASE_URL}/api/v1/conversation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -155,7 +158,7 @@ function App() {
     setStatus('Testing text-to-speech...');
 
     try {
-      const response = await fetch('/api/v1/tts', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/tts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

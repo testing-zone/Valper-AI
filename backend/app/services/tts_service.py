@@ -33,14 +33,16 @@ class TTSService:
             raise Exception("TTS service not initialized")
         
         try:
-            # Ensure temp directory exists
-            os.makedirs('temp/audio', exist_ok=True)
+            # Get the current working directory and create temp directory
+            current_dir = os.getcwd()
+            temp_dir = os.path.join(current_dir, 'temp', 'audio')
+            os.makedirs(temp_dir, exist_ok=True)
             
             # Create temporary file for audio output
             temp_file = tempfile.NamedTemporaryFile(
                 delete=False, 
                 suffix='.wav',
-                dir='temp/audio'
+                dir=temp_dir
             )
             temp_file_path = temp_file.name
             temp_file.close()

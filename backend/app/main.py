@@ -21,12 +21,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000",
-        "http://0.0.0.0:3000",
-        "*"  # Allow all origins for development
-    ],
+    allow_origins=["*"],  # Allow all origins for external access
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -45,21 +40,28 @@ routes.tts_service = tts_service
 async def startup_event():
     """Initialize services on startup"""
     logger.info("Starting Valper AI Assistant...")
-    await stt_service.initialize()
-    await tts_service.initialize()
-    logger.info("Services initialized successfully!")
+    
+    # Initialize STT service
+    try:
+        await stt_service.initialize()
+        logger.info("STT service initialized successfully!")
+    except Exception as e:
+        logger.error(f"Failed to initialize STT service: {e}")
+        # Don't raise the exception, let the service start with STT disabled
+    
+    # Initialize TTS service
+    try:
+        await tts_service.initialize()
+        logger.info("TTS service initialized successfully!")
+    except Exception as e:
+        logger.error(f"Failed to initialize TTS service: {e}")
+        # Don't raise the exception, let the service start with TTS disabled
+    
+    logger.info("Valper AI Assistant startup completed!")
 
 @app.get("/")
 async def root():
     return {"message": "Valper AI Assistant API", "version": "1.0.0"}
-
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "stt_ready": stt_service.is_ready,
-        "tts_ready": tts_service.is_ready
-    }
 
 # Include API routes
 app.include_router(router, prefix="/api/v1")
