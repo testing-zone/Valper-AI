@@ -183,6 +183,34 @@ class STTService:
         """Check if the STT service is available"""
         return self.is_initialized
     
+    async def transcribe(self, file_path: str) -> str:
+        """
+        Transcribe audio file and return just the text
+        
+        Args:
+            file_path: Path to the audio file
+            
+        Returns:
+            Transcribed text or empty string if failed
+        """
+        try:
+            # Read the file as bytes
+            with open(file_path, 'rb') as f:
+                audio_data = f.read()
+            
+            # Use the existing transcribe_audio method
+            result = await self.transcribe_audio(audio_data)
+            
+            if result.get("success", False):
+                return result.get("text", "").strip()
+            else:
+                logger.error(f"Transcription failed: {result.get('error', 'Unknown error')}")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"Error in transcribe method: {e}")
+            return ""
+    
     def get_info(self) -> dict:
         """Get information about the STT service"""
         return {

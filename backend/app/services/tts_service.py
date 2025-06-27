@@ -118,6 +118,20 @@ class TTSService:
         """Check if the TTS service is available"""
         return self.is_ready and self.pipeline is not None
     
+    async def synthesize(self, text: str, voice: str = 'af_heart') -> Optional[str]:
+        """
+        Synthesize speech from text and return audio file path
+        This is an alias for synthesize_speech for compatibility
+        
+        Args:
+            text: Text to synthesize
+            voice: Voice to use for synthesis
+            
+        Returns:
+            Path to the generated audio file or None if failed
+        """
+        return await self.synthesize_speech(text, voice)
+    
     def get_info(self) -> dict:
         """Get information about the TTS service"""
         return {

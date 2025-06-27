@@ -3,10 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from app.services.stt_service import STTService
 from app.services.tts_service import TTSService
+from app.services.llm_service import LLMService
 from app.api.routes import router
 import os
 import tempfile
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Valper AI Assistant",
-    description="Voice assistant with speech-to-text and text-to-speech capabilities",
+    description="Voice assistant with speech-to-text, LLM, and text-to-speech capabilities",
     version="1.0.0"
 )
 
@@ -30,11 +35,13 @@ app.add_middleware(
 # Initialize services as global instances
 stt_service = STTService()
 tts_service = TTSService()
+llm_service = LLMService()
 
 # Share services with router
 from app.api import routes
 routes.stt_service = stt_service
 routes.tts_service = tts_service
+routes.llm_service = llm_service
 
 @app.on_event("startup")
 async def startup_event():
@@ -64,7 +71,7 @@ async def root():
     return {"message": "Valper AI Assistant API", "version": "1.0.0"}
 
 # Include API routes
-app.include_router(router, prefix="/api/v1")
+app.include_router(router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn

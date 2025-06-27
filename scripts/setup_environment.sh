@@ -364,4 +364,103 @@ echo "📝 Environment info saved to: logs/environment_info.txt"
 echo ""
 echo "🚀 Ready to continue! Run the following to proceed:"
 echo "   source ./activate_valper.sh"
-echo "   ./scripts/setup_models.sh" 
+echo "   ./scripts/setup_models.sh"
+
+# Valper AI Environment Setup Script
+# This script sets up the environment variables for the Valper AI project
+
+echo "🚀 Setting up Valper AI Environment..."
+
+# Create .env file if it doesn't exist
+ENV_FILE="backend/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "📝 Creating .env file..."
+    touch "$ENV_FILE"
+else
+    echo "📝 .env file already exists, updating..."
+fi
+
+# Function to prompt for input with default value
+prompt_with_default() {
+    local prompt="$1"
+    local default="$2"
+    local env_var="$3"
+    
+    echo -n "$prompt [$default]: "
+    read -r input
+    
+    if [ -z "$input" ]; then
+        input="$default"
+    fi
+    
+    # Update .env file
+    if grep -q "^$env_var=" "$ENV_FILE"; then
+        # Update existing line
+        sed -i "s/^$env_var=.*/$env_var=$input/" "$ENV_FILE"
+    else
+        # Add new line
+        echo "$env_var=$input" >> "$ENV_FILE"
+    fi
+}
+
+echo ""
+echo "🔧 Configuring environment variables..."
+
+# TotalGPT API Configuration
+echo ""
+echo "🤖 TotalGPT API Configuration:"
+echo "   Get your API key from: https://totalgpt.ai/"
+prompt_with_default "Enter your TotalGPT API key" "your_api_key_here" "TOTALGPT_API_KEY"
+
+# Backend Configuration
+echo ""
+echo "⚙️ Backend Configuration:"
+prompt_with_default "Backend host" "0.0.0.0" "BACKEND_HOST"
+prompt_with_default "Backend port" "8000" "BACKEND_PORT"
+prompt_with_default "Debug mode" "True" "DEBUG"
+
+# Audio Configuration
+echo ""
+echo "🎵 Audio Configuration:"
+prompt_with_default "Audio sample rate" "16000" "AUDIO_SAMPLE_RATE"
+prompt_with_default "Audio channels" "1" "AUDIO_CHANNELS"
+
+# Model Configuration
+echo ""
+echo "🧠 Model Configuration:"
+prompt_with_default "Whisper model size" "base" "WHISPER_MODEL"
+prompt_with_default "TTS voice" "af_heart" "TTS_VOICE"
+
+# Security Configuration
+echo ""
+echo "🔒 Security Configuration:"
+prompt_with_default "CORS origins (comma-separated)" "*" "CORS_ORIGINS"
+prompt_with_default "API key required" "False" "REQUIRE_API_KEY"
+
+# Logging Configuration
+echo ""
+echo "📊 Logging Configuration:"
+prompt_with_default "Log level" "INFO" "LOG_LEVEL"
+prompt_with_default "Log file path" "logs/valper.log" "LOG_FILE"
+
+# Create logs directory
+mkdir -p logs
+
+echo ""
+echo "✅ Environment setup completed!"
+echo ""
+echo "📋 Configuration Summary:"
+echo "   - Environment file: $ENV_FILE"
+echo "   - Logs directory: logs/"
+echo ""
+echo "🔑 Next Steps:"
+echo "   1. Make sure your TotalGPT API key is correct"
+echo "   2. Start the backend: ./scripts/start_backend.sh"
+echo "   3. Start the frontend: ./scripts/start_frontend.sh"
+echo "   4. Access the application at: https://209.137.198.189"
+echo ""
+echo "⚠️  Important:"
+echo "   - Keep your API keys secure and never commit them to version control"
+echo "   - The .env file is already in .gitignore"
+echo "   - For production, use proper SSL certificates"
+echo "" 

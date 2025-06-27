@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
+from fastapi import UploadFile
 
 class TTSRequest(BaseModel):
     text: str = Field(..., description="Text to convert to speech", max_length=1000)
@@ -14,14 +15,13 @@ class STTResponse(BaseModel):
     text: str
     confidence: Optional[float] = None
 
-class ConversationRequest(BaseModel):
-    message: str = Field(..., description="User message", max_length=500)
-    session_id: Optional[str] = None
+
 
 class ConversationResponse(BaseModel):
-    text_response: str
-    audio_url: Optional[str] = None
-    session_id: Optional[str] = None
+    user_text: str
+    assistant_text: str
+    audio_path: str
+    success: bool
 
 class HealthResponse(BaseModel):
     status: str
@@ -36,4 +36,14 @@ class VoiceInfo(BaseModel):
     description: Optional[str] = None
 
 class VoicesResponse(BaseModel):
-    voices: List[VoiceInfo] 
+    voices: List[VoiceInfo]
+
+class STTRequest(BaseModel):
+    """Request model for STT"""
+    pass
+
+class ServiceStatus(BaseModel):
+    """Service status information"""
+    service: str
+    status: str
+    details: Optional[Dict] = None 

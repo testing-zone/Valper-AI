@@ -1,147 +1,152 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from app.models.schemas import STTRequest, TTSRequest, ConversationResponse
 from app.services.stt_service import STTService
 from app.services.tts_service import TTSService
+from app.services.llm_service import LLMService
 import tempfile
 import os
 import logging
-import datetime
+import json
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Services will be injected from main.py
-stt_service = None
-tts_service = None
-
-class TTSRequest(BaseModel):
-    text: str
-    voice: str = 'af_heart'
-
-class ConversationRequest(BaseModel):
-    message: str
-
-@router.get("/test")
-async def test_endpoint():
-    """Simple test endpoint to verify the API is working"""
-    return {
-        "message": "API is working!",
-        "timestamp": str(datetime.datetime.now()),
-        "stt_available": stt_service is not None,
-        "tts_available": tts_service is not None
-    }
+# Global service instances (will be set by main.py)
+stt_service: Optional[STTService] = None
+tts_service: Optional[TTSService] = None
+llm_service: Optional[LLMService] = None
 
 @router.get("/health")
 async def health_check():
-    """Health check endpoint for API monitoring"""
+    """Health check endpoint"""
     return {
         "status": "healthy",
-        "stt_ready": stt_service.is_ready if stt_service else False,
-        "tts_ready": tts_service.is_ready if tts_service else False
+        "services": {
+            "stt": stt_service.is_ready if stt_service else False,
+            "tts": tts_service.is_ready if tts_service else False,
+            "llm": llm_service.is_available if llm_service else False
+        }
     }
 
 @router.post("/stt")
-async def speech_to_text(audio: UploadFile = File(...)):
+async def speech_to_text(audio_file: UploadFile = File(...)):
     """Convert speech to text"""
-    if not stt_service:
+    if not stt_service or not stt_service.is_ready:
         raise HTTPException(status_code=503, detail="STT service not available")
     
-    if not stt_service.is_ready:
-        raise HTTPException(status_code=503, detail="STT service not ready")
-    
-    if not audio.content_type.startswith('audio/'):
-        raise HTTPException(status_code=400, detail="File must be an audio file")
-    
     try:
-        # Read audio file content
-        content = await audio.read()
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            content = await audio_file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
         
-        if len(content) == 0:
-            raise HTTPException(status_code=400, detail="Audio file is empty")
+        # Process with STT
+        text = await stt_service.transcribe(temp_file_path)
         
-        # Transcribe audio using bytes
-        result = await stt_service.transcribe_audio(content)
+        # Clean up
+        os.unlink(temp_file_path)
         
-        if not result["success"]:
-            raise HTTPException(status_code=500, detail=result.get("error", "Failed to transcribe audio"))
-        
-        return {"text": result["text"]}
-        
-    except HTTPException:
-        raise
+        if text:
+            return {"text": text, "success": True}
+        else:
+            raise HTTPException(status_code=400, detail="Could not transcribe audio")
+            
     except Exception as e:
-        logger.error(f"Error in STT endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"STT error: {e}")
+        raise HTTPException(status_code=500, detail=f"STT processing error: {str(e)}")
 
 @router.post("/tts")
 async def text_to_speech(request: TTSRequest):
     """Convert text to speech"""
-    if not tts_service:
+    if not tts_service or not tts_service.is_ready:
         raise HTTPException(status_code=503, detail="TTS service not available")
     
-    if not tts_service.is_ready:
-        raise HTTPException(status_code=503, detail="TTS service not ready")
-    
-    if not request.text or len(request.text.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
-    
     try:
-        audio_file_path = await tts_service.synthesize_speech(request.text, request.voice)
+        audio_path = await tts_service.synthesize(request.text)
         
-        if audio_file_path is None:
-            raise HTTPException(status_code=500, detail="Failed to synthesize speech")
+        if audio_path and os.path.exists(audio_path):
+            return FileResponse(
+                audio_path,
+                media_type="audio/wav",
+                filename="response.wav"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to generate audio")
+            
+    except Exception as e:
+        logger.error(f"TTS error: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS processing error: {str(e)}")
+
+@router.post("/conversation", response_model=ConversationResponse)
+async def conversation(
+    audio_file: UploadFile = File(...),
+    conversation_history: str = Form(default="[]")
+):
+    """Complete conversation flow: STT -> LLM -> TTS"""
+    try:
+        # Parse conversation history
+        try:
+            history = json.loads(conversation_history)
+        except json.JSONDecodeError:
+            history = []
         
-        if not os.path.exists(audio_file_path):
-            raise HTTPException(status_code=500, detail="Generated audio file not found")
+        # Step 1: STT - Convert audio to text
+        if not stt_service or not stt_service.is_ready:
+            raise HTTPException(status_code=503, detail="STT service not available")
         
-        return FileResponse(
-            audio_file_path,
-            media_type='audio/wav',
-            filename='speech.wav'
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            content = await audio_file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        # Transcribe audio
+        user_text = await stt_service.transcribe(temp_file_path)
+        os.unlink(temp_file_path)  # Clean up
+        
+        if not user_text:
+            raise HTTPException(status_code=400, detail="Could not transcribe audio")
+        
+        # Step 2: LLM - Generate response
+        if not llm_service or not llm_service.is_available:
+            raise HTTPException(status_code=503, detail="LLM service not available")
+        
+        assistant_text = await llm_service.generate_response(user_text, history)
+        
+        if not assistant_text:
+            raise HTTPException(status_code=500, detail="Failed to generate LLM response")
+        
+        # Step 3: TTS - Convert response to audio
+        if not tts_service or not tts_service.is_ready:
+            raise HTTPException(status_code=503, detail="TTS service not available")
+        
+        audio_path = await tts_service.synthesize(assistant_text)
+        
+        if not audio_path or not os.path.exists(audio_path):
+            raise HTTPException(status_code=500, detail="Failed to generate audio response")
+        
+        return ConversationResponse(
+            user_text=user_text,
+            assistant_text=assistant_text,
+            audio_path=audio_path,
+            success=True
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in TTS endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"Conversation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Conversation processing error: {str(e)}")
 
-@router.get("/voices")
-async def get_voices():
-    """Get available TTS voices"""
-    if not tts_service:
-        return {"voices": []}
-    return {"voices": tts_service.get_available_voices()}
-
-@router.post("/conversation")
-async def conversation(request: ConversationRequest):
-    """Simple conversation endpoint (placeholder for future LLM integration)"""
-    # This is a simple echo for now - you can integrate with an LLM later
-    response_text = f"You said: {request.message}. This is Valper responding!"
-    
-    if not tts_service or not tts_service.is_ready:
-        return {"text_response": response_text, "audio_url": None}
-    
-    try:
-        audio_file_path = await tts_service.synthesize_speech(response_text)
-        
-        return {
-            "text_response": response_text,
-            "audio_url": f"/api/v1/audio/{os.path.basename(audio_file_path)}"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in conversation endpoint: {e}")
-        return {"text_response": response_text, "audio_url": None}
-
-@router.get("/audio/{filename}")
-async def get_audio(filename: str):
-    """Serve generated audio files"""
-    current_dir = os.getcwd()
-    file_path = os.path.join(current_dir, 'temp', 'audio', filename)
-    if os.path.exists(file_path):
-        return FileResponse(file_path, media_type='audio/wav')
-    else:
-        raise HTTPException(status_code=404, detail="Audio file not found") 
+@router.get("/services/status")
+async def get_services_status():
+    """Get status of all services"""
+    return {
+        "stt": stt_service.get_info() if stt_service else {"status": "not initialized"},
+        "tts": tts_service.get_info() if tts_service else {"status": "not initialized"},
+        "llm": llm_service.get_info() if llm_service else {"status": "not initialized"}
+    } 
