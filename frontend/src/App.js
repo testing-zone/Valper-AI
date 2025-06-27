@@ -9,9 +9,11 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [conversationHistory, setConversationHistory] = useState([]);
   const [servicesStatus, setServicesStatus] = useState({});
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const currentAudioRef = useRef(null);
 
   const API_BASE_URL = window.location.protocol + '//' + window.location.host + '/api';
 
@@ -60,6 +62,28 @@ function App() {
     }
   };
 
+  const stopAudio = () => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+      setIsPlayingAudio(false);
+    }
+  };
+
+  const handleMainButtonClick = () => {
+    if (isPlayingAudio) {
+      // If audio is playing, stop it
+      stopAudio();
+    } else if (isRecording) {
+      // If recording, stop recording
+      stopRecording();
+    } else if (!isProcessing) {
+      // If idle, start recording
+      startRecording();
+    }
+  };
+
   const processConversation = async (audioBlob) => {
     setIsProcessing(true);
     try {
@@ -105,7 +129,25 @@ function App() {
         
         // Auto-play the response
         const audio = new Audio(audioUrl);
-        audio.play();
+        currentAudioRef.current = audio;
+        setIsPlayingAudio(true);
+        
+        // Handle audio events
+        audio.onended = () => {
+          setIsPlayingAudio(false);
+          currentAudioRef.current = null;
+        };
+        
+        audio.onerror = () => {
+          setIsPlayingAudio(false);
+          currentAudioRef.current = null;
+        };
+        
+        audio.play().catch(error => {
+          console.error('Error playing audio:', error);
+          setIsPlayingAudio(false);
+          currentAudioRef.current = null;
+        });
       }
 
     } catch (error) {
@@ -146,8 +188,31 @@ function App() {
 
   const playAudio = () => {
     if (generatedAudio) {
+      // Stop current audio if playing
+      if (currentAudioRef.current) {
+        stopAudio();
+      }
+      
       const audio = new Audio(generatedAudio);
-      audio.play();
+      currentAudioRef.current = audio;
+      setIsPlayingAudio(true);
+      
+      // Handle audio events
+      audio.onended = () => {
+        setIsPlayingAudio(false);
+        currentAudioRef.current = null;
+      };
+      
+      audio.onerror = () => {
+        setIsPlayingAudio(false);
+        currentAudioRef.current = null;
+      };
+      
+      audio.play().catch(error => {
+        console.error('Error playing audio:', error);
+        setIsPlayingAudio(false);
+        currentAudioRef.current = null;
+      });
     }
   };
 
@@ -185,107 +250,138 @@ function App() {
     setConversationHistory([]);
     setTranscriptionResult('');
     setGeneratedAudio(null);
+    
+    // Stop any playing audio
+    if (currentAudioRef.current) {
+      stopAudio();
+    }
   };
 
   return (
     <div className="App">
       <header className="App-header">
-        <h1>🎤 Valper AI - Asistente Virtual</h1>
-        <p>Asistente de voz con STT, LLM y TTS integrados</p>
+        <h1 data-text="VALPER AI">VALPER AI</h1>
+        <p>NEURAL VOICE ASSISTANT</p>
       </header>
 
       <div className="services-status">
-        <h3>Estado de Servicios:</h3>
+        <h3>SYSTEM STATUS</h3>
         <div className="status-grid">
           <div className={`status-item ${servicesStatus.stt?.status === 'ready' ? 'ready' : 'not-ready'}`}>
-            STT: {servicesStatus.stt?.status || 'Desconocido'}
+            STT: {servicesStatus.stt?.status === 'ready' ? 'ONLINE' : 'OFFLINE'}
           </div>
           <div className={`status-item ${servicesStatus.tts?.status === 'ready' ? 'ready' : 'not-ready'}`}>
-            TTS: {servicesStatus.tts?.status || 'Desconocido'}
+            TTS: {servicesStatus.tts?.status === 'ready' ? 'ONLINE' : 'OFFLINE'}
           </div>
           <div className={`status-item ${servicesStatus.llm?.status === 'ready' ? 'ready' : 'not-ready'}`}>
-            LLM: {servicesStatus.llm?.status || 'Desconocido'}
+            LLM: {servicesStatus.llm?.status === 'ready' ? 'ONLINE' : 'OFFLINE'}
           </div>
         </div>
       </div>
 
       <div className="main-container">
-        {/* Conversación por Voz */}
-        <div className="section">
-          <h2>🎤 Conversación por Voz</h2>
-          <div className="voice-controls">
+        {/* Main Voice Interface */}
+        <div className="voice-interface">
+          <div className="main-button-container">
             <button 
-              className={`record-button ${isRecording ? 'recording' : ''}`}
-              onClick={isRecording ? stopRecording : startRecording}
+              className={`main-record-button ${isRecording ? 'recording' : ''} ${isProcessing ? 'processing' : ''} ${isPlayingAudio ? 'playing' : ''}`}
+              onClick={handleMainButtonClick}
               disabled={isProcessing}
             >
-              {isRecording ? '🛑 Detener Grabación' : '🎤 Iniciar Grabación'}
+              {isProcessing ? (
+                <div className="processing-animation">
+                  <div className="spinner"></div>
+                  <div className="processing-text">THINKING</div>
+                </div>
+              ) : isPlayingAudio ? (
+                <div className="playing-content">
+                  <div className="stop-icon">⏹</div>
+                  <div className="playing-text">STOP</div>
+                </div>
+              ) : isRecording ? (
+                <div className="recording-content">
+                  <div className="pulse-ring"></div>
+                  <div className="recording-text">LISTENING</div>
+                </div>
+              ) : (
+                <div className="start-content">
+                  <div className="start-text">START</div>
+                </div>
+              )}
             </button>
-            
-            {isProcessing && (
-              <div className="processing">
-                <span>🔄 Procesando conversación...</span>
-              </div>
-            )}
           </div>
-          
-          <button 
-            className="clear-button"
-            onClick={clearHistory}
-            disabled={conversationHistory.length === 0}
-          >
-            🗑️ Limpiar Historial
-          </button>
+
+          {isRecording && (
+            <div className="voice-visualizer">
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+            </div>
+          )}
+
+          {isProcessing && (
+            <div className="processing-stages">
+              <div className="stage">
+                <div className="stage-icon">🎤</div>
+                <div className="stage-text">Processing Audio</div>
+              </div>
+              <div className="stage">
+                <div className="stage-icon">🧠</div>
+                <div className="stage-text">Neural Analysis</div>
+              </div>
+              <div className="stage">
+                <div className="stage-icon">🔊</div>
+                <div className="stage-text">Generating Response</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Prueba TTS Manual */}
-        <div className="section">
-          <h2>🔊 Prueba TTS Manual</h2>
+        {/* Conversation History */}
+        {conversationHistory.length > 0 && (
+          <div className="conversation-section">
+            <h2>MEMORY BANK</h2>
+            <div className="history-list">
+              {conversationHistory.map((msg, index) => (
+                <div key={index} className={`history-item ${msg.role}`}>
+                  <strong>{msg.role === 'user' ? '👤 HUMAN:' : '🤖 AI:'}</strong>
+                  <p>{msg.content}</p>
+                </div>
+              ))}
+            </div>
+            <button 
+              className="clear-button"
+              onClick={clearHistory}
+            >
+              CLEAR MEMORY
+            </button>
+          </div>
+        )}
+
+        {/* Voice Synthesis Lab - Bottom */}
+        <div className="synthesis-lab">
+          <h2>VOICE SYNTHESIS LAB</h2>
           <div className="tts-controls">
             <textarea
               value={ttsText}
               onChange={(e) => setTtsText(e.target.value)}
-              placeholder="Escribe texto para convertir a voz..."
-              rows="3"
+              placeholder="Input text for neural voice synthesis..."
+              rows="2"
             />
             <div className="button-group">
               <button onClick={generateTTS} disabled={!ttsText.trim()}>
-                🔊 Generar Audio
+                SYNTHESIZE
               </button>
-              <button onClick={playAudio} disabled={!generatedAudio}>
-                ▶️ Reproducir
-              </button>
-              <button onClick={testSTT} disabled={!generatedAudio}>
-                🎵 Probar STT
+              <button 
+                onClick={isPlayingAudio ? stopAudio : playAudio} 
+                disabled={!generatedAudio}
+                className={isPlayingAudio ? 'playing' : ''}
+              >
+                {isPlayingAudio ? 'STOP' : 'PLAY'}
               </button>
             </div>
-          </div>
-        </div>
-
-        {/* Resultados */}
-        <div className="section">
-          <h2>📝 Resultados</h2>
-          <div className="results">
-            {transcriptionResult && (
-              <div className="transcription">
-                <h3>Conversación:</h3>
-                <pre>{transcriptionResult}</pre>
-              </div>
-            )}
-            
-            {conversationHistory.length > 0 && (
-              <div className="history">
-                <h3>Historial de Conversación:</h3>
-                <div className="history-list">
-                  {conversationHistory.map((msg, index) => (
-                    <div key={index} className={`history-item ${msg.role}`}>
-                      <strong>{msg.role === 'user' ? '👤 Usuario:' : '🤖 Asistente:'}</strong>
-                      <p>{msg.content}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

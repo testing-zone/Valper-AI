@@ -1,364 +1,406 @@
-# 🛠️ Setup Guide - Valper AI Assistant
+# 🛠️ Setup Guide - Valper AI Assistant v2.0
 
-Esta guía te ayudará a configurar y ejecutar Valper AI Assistant en tu sistema con Python 3.11+ y soporte GPU optimizado.
+Esta guía te ayudará a configurar y ejecutar **Valper AI Assistant** - un asistente de voz completo con **OpenAI Whisper**, **TotalGPT API**, y **Kokoro TTS** en tu sistema.
 
 ## 📋 Prerrequisitos
 
 ### Sistema Operativo
-- **macOS** (probado en 10.15+)
-- **Linux** (Ubuntu 20.04+, Debian 11+)
-- **Windows** (WSL2 recomendado)
+- **Ubuntu 20.04+ LTS** (recomendado Ubuntu 22.04)
+- **Linux** con soporte para Python 3.11+
+- **8GB RAM mínimo** (16GB recomendado para mejor rendimiento)
 
 ### Software Requerido
-- **Python 3.11+** 🚨 **REQUERIDO** ([descargar](https://www.python.org/downloads/))
-- **Node.js 16+** ([descargar](https://nodejs.org/))
+- **Python 3.11+** 🚨 **REQUERIDO** ([guía de instalación](#instalación-de-python-311))
+- **Node.js 18+** ([descargar](https://nodejs.org/))
 - **Git** ([descargar](https://git-scm.com/downloads))
+- **Nginx** (para configuración HTTPS)
 
 ### Hardware Recomendado
 - **RAM**: 8GB mínimo (16GB recomendado)
 - **Almacenamiento**: 3GB libres para modelos y entorno
-- **GPU**: NVIDIA GPU con CUDA 11.8+ (opcional pero recomendado)
-- **Micrófono**: Para funcionalidad de voz
+- **GPU**: NVIDIA GPU con CUDA (opcional, mejora rendimiento TTS)
+- **Micrófono**: Requerido para funcionalidad de voz
 
-### Instalación de Python 3.11+
+### Requisitos de Red
+- **Puertos**: 80, 443, 3000, 8000 (configurados automáticamente)
+- **Firewall**: UFW recomendado
+- **HTTPS**: Requerido para acceso al micrófono del navegador
 
-#### macOS
-```bash
-# Con Homebrew
-brew install python@3.11
+## 🚀 Métodos de Instalación
 
-# O descargar desde python.org
-# https://www.python.org/downloads/
-```
-
-#### Ubuntu/Debian
-```bash
-# Ubuntu 22.04+ o Debian 12+
-sudo apt update
-sudo apt install python3.11 python3.11-venv python3.11-dev
-
-# Para versiones anteriores, usar deadsnakes PPA
-sudo add-apt-repository ppa:deadsnakes/ppa
-sudo apt update
-sudo apt install python3.11 python3.11-venv python3.11-dev
-```
-
-#### Windows
-- Descargar desde [python.org](https://www.python.org/downloads/)
-- O usar WSL2 con Ubuntu 22.04+
-
-## 🚀 Instalación Rápida
-
-### 1. Clonar el Repositorio
+### Opción 1: Instalación Automática (Recomendada)
 
 ```bash
+# Clonar el repositorio
 git clone https://github.com/tu-usuario/valper-ai.git
 cd valper-ai
+
+# Ejecutar instalación automática
+chmod +x setup_quick_install.sh
+./setup_quick_install.sh
 ```
 
-### 2. Configuración Automática con Entorno Aislado
+**La instalación automática incluye:**
+- ✅ Instalación de dependencias del sistema
+- ✅ Configuración de Python 3.11 y entornos virtuales
+- ✅ Instalación de Node.js y dependencias frontend
+- ✅ Configuración de Nginx con SSL/HTTPS
+- ✅ Configuración de firewall UFW
+- ✅ Creación de certificados SSL autofirmados
+- ✅ Scripts de inicio automáticos
+
+### Opción 2: Instalación Manual Paso a Paso
+
+#### 1. Preparación del Sistema
 
 ```bash
-# Hacer ejecutables los scripts
+# Actualizar sistema
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl wget git build-essential
+
+# Instalar Python 3.11
+sudo add-apt-repository ppa:deadsnakes/ppa -y
+sudo apt update
+sudo apt install -y python3.11 python3.11-venv python3.11-dev python3.11-distutils
+
+# Instalar Node.js 18
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Instalar Nginx
+sudo apt install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+```
+
+#### 2. Configurar Entornos Virtuales
+
+```bash
+# Clonar proyecto
+git clone https://github.com/tu-usuario/valper-ai.git
+cd valper-ai
+
+# Hacer scripts ejecutables
 chmod +x scripts/*.sh
 
-# Configurar entorno Python 3.11+ con detección automática de GPU
+# Configurar entorno STT (OpenAI Whisper)
+./scripts/setup_stt_environment.sh
+
+# Configurar entorno TTS (Kokoro)
+./scripts/setup_tts_environment.sh
+
+# Configurar entorno Backend (FastAPI)
 ./scripts/setup_environment.sh
 ```
 
-**Este script hará automáticamente:**
-- ✅ Verificar Python 3.11+
-- ✅ Crear entorno virtual aislado
-- ✅ Detectar y configurar GPU (CUDA) si está disponible
-- ✅ Instalar PyTorch con soporte CUDA apropiado
-- ✅ Instalar todas las dependencias optimizadas
-- ✅ Crear archivo de configuración `.env`
-- ✅ Configurar script de activación personalizado
-
-### 3. Descargar Modelos de IA
+#### 3. Configurar Backend
 
 ```bash
-# Descargar modelos de IA (puede tomar varios minutos)
-./scripts/setup_models.sh
+cd backend
+
+# Crear archivo .env con tu API key de TotalGPT
+cat > .env << EOF
+TOTALGPT_API_KEY=tu-api-key-aqui
+API_HOST=0.0.0.0
+API_PORT=8000
+DEBUG=false
+LOG_LEVEL=INFO
+EOF
+
+# Activar entorno e instalar dependencias
+source ../venv_backend/bin/activate
+pip install -r requirements.txt
+
+cd ..
 ```
 
-### 4. Iniciar la Aplicación
+#### 4. Configurar Frontend
 
 ```bash
-# Activar entorno (cada vez que abras una nueva terminal)
-source ./activate_valper.sh
+cd frontend
 
+# Instalar dependencias
+npm install
+
+# Verificar instalación
+npm ls react react-dom
+
+cd ..
+```
+
+#### 5. Configurar HTTPS/SSL
+
+```bash
+# Crear directorio para certificados
+sudo mkdir -p /etc/ssl/valper
+
+# Generar certificado SSL (reemplaza TU_IP con tu IP real)
+export SERVER_IP="tu-ip-aqui"
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/valper/valper.key \
+  -out /etc/ssl/valper/valper.crt \
+  -subj "/C=US/ST=State/L=City/O=Valper-AI/CN=$SERVER_IP" \
+  -addext "subjectAltName=IP:$SERVER_IP,DNS:localhost,DNS:valper-ai.local"
+```
+
+#### 6. Configurar Nginx
+
+```bash
+# Crear configuración de Nginx (ver docs/INSTALACION_COMPLETA.md para config completa)
+sudo nano /etc/nginx/sites-available/valper-ai
+
+# Habilitar sitio
+sudo ln -sf /etc/nginx/sites-available/valper-ai /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Verificar y recargar
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+#### 7. Configurar Firewall
+
+```bash
+# Configurar UFW
+sudo ufw enable
+sudo ufw allow ssh
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 3000/tcp
+sudo ufw allow 8000/tcp
+
+# Verificar reglas
+sudo ufw status
+```
+
+## 🎮 Iniciar Valper AI
+
+### Scripts de Inicio
+
+```bash
 # Terminal 1: Backend
 ./scripts/start_backend.sh
 
 # Terminal 2: Frontend (nueva terminal)
-source ./activate_valper.sh  # Activar entorno también aquí
 ./scripts/start_frontend.sh
 ```
 
-### 5. Verificar Instalación
+### URLs de Acceso
 
-1. Abre http://localhost:3000
-2. Verifica que los chips de estado muestren "Ready"
-3. Prueba el botón "Test TTS"
-4. Graba un mensaje de voz
+- **Aplicación Principal**: `https://tu-ip` (recomendado para micrófono)
+- **HTTP**: `http://tu-ip` (sin acceso a micrófono)
+- **API Documentation**: `http://tu-ip/docs`
+- **Health Check**: `http://tu-ip/health`
 
-## 🎮 Optimización GPU
-
-El script detecta automáticamente tu GPU y configura:
-
-### NVIDIA GPU Detectada
-- ✅ PyTorch con CUDA 11.8
-- ✅ Librerías de aceleración GPU
-- ✅ Configuración optimizada para tu tarjeta
-
-### CPU Solamente
-- ✅ PyTorch optimizado para CPU
-- ✅ Configuración eficiente sin GPU
-
-### Verificar GPU
-```bash
-# Activar entorno
-source ./activate_valper.sh
-
-# El script mostrará automáticamente el estado de tu GPU
-# También puedes verificar manualmente:
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-## 🔄 Activación del Entorno
-
-### Primera vez (después del setup)
-```bash
-source ./activate_valper.sh
-```
-
-### Script de activación personalizado
-El script `activate_valper.sh` te muestra:
-- ✅ Estado del entorno Python
-- ✅ Información de GPU/CUDA
-- ✅ Estado de modelos descargados
-- ✅ Estado de servicios corriendo
-- ✅ Comandos disponibles
-
-## 🐳 Instalación con Docker (Alternativa)
-
-### Prerrequisitos Docker
-- Docker Engine 20.10+
-- Docker Compose V2
-- NVIDIA Docker (para soporte GPU)
-
-### Ejecutar con Docker
-
-```bash
-# Clonar y navegar al proyecto
-git clone https://github.com/tu-usuario/valper-ai.git
-cd valper-ai
-
-# Construir y ejecutar
-cd docker
-docker-compose up --build
-
-# En segundo plano
-docker-compose up -d --build
-```
-
-### Acceder a la Aplicación
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **Documentación**: http://localhost:8000/docs
-
-## 🔧 Configuración Avanzada
+## 🔧 Configuración
 
 ### Variables de Entorno
 
-El archivo `.env` se crea automáticamente, pero puedes editarlo:
+El archivo `backend/.env` contiene:
 
 ```bash
-# Editar configuración
-nano .env
+# API Key de TotalGPT (REQUERIDO)
+TOTALGPT_API_KEY=sk-tu-api-key
+
+# Configuración del servidor
+API_HOST=0.0.0.0
+API_PORT=8000
+DEBUG=false
+LOG_LEVEL=INFO
 ```
 
-Principales configuraciones:
-- `API_HOST`: Host del backend (default: 0.0.0.0)
-- `API_PORT`: Puerto del backend (default: 8000)
-- `DEBUG`: Modo debug (default: false)
-- `LOG_LEVEL`: Nivel de logs (INFO, DEBUG, ERROR)
+### Configuración de TotalGPT API
 
-### Configuración Manual de GPU
+**Valper AI utiliza TotalGPT API con el modelo:**
+- **Modelo**: `Sao10K-72B-Qwen2.5-Kunou-v1-FP8-Dynamic`
+- **Endpoint**: `https://api.totalgpt.ai/v1/chat/completions`
+- **API Key**: Requerida en `.env`
 
-Si el script no detecta tu GPU correctamente:
+### Personalización de Voces TTS
 
-```bash
-# Activar entorno
-source ./activate_valper.sh
-
-# Verificar CUDA
-nvidia-smi
-
-# Reinstalar PyTorch con CUDA específico
-pip uninstall torch torchaudio
-pip install torch==2.1.0+cu118 torchaudio==2.1.0+cu118 --index-url https://download.pytorch.org/whl/cu118
-```
+Las voces disponibles en Kokoro TTS:
+- `af_heart` - Voz femenina suave
+- `af_sky` - Voz femenina clara  
+- `af_light` - Voz femenina ligera
+- `am_adam` - Voz masculina profunda
+- `am_michael` - Voz masculina natural
 
 ## 🧪 Verificación de la Instalación
 
-### Scripts de Verificación
+### Script de Prueba Completo
 
 ```bash
-# Activar entorno
-source ./activate_valper.sh
+# Ejecutar verificación completa
+./scripts/test_complete_installation.sh
+```
 
-# Verificar servicios del backend
+### Verificación Manual
+
+```bash
+# 1. Verificar entornos virtuales
+ls -la venv_*
+
+# 2. Verificar backend
+source venv_backend/bin/activate
+python -c "import fastapi, uvicorn, whisper; print('Backend OK')"
+
+# 3. Verificar frontend
+cd frontend && npm ls react
+
+# 4. Verificar SSL
+sudo ls -la /etc/ssl/valper/
+
+# 5. Verificar Nginx
+sudo nginx -t
+
+# 6. Verificar firewall
+sudo ufw status
+```
+
+## 🎯 Uso de la Aplicación
+
+### Interfaz de Usuario Cyberpunk
+
+**Elementos principales:**
+- **Botón Central**: Control principal de voz (4 estados)
+  - 🔵 **START** (Cyan) - Iniciar grabación
+  - 🔴 **LISTENING** (Rosa) - Grabando audio
+  - 🟣 **THINKING** (Morado) - Procesando con IA
+  - 🟠 **PLAYING** (Naranja) - Reproduciendo respuesta
+
+- **Chips de Estado**: Muestran estado de servicios STT/TTS/LLM
+- **Historial**: Conversación completa con timestamps
+- **Voice Synthesis Lab**: Prueba directa de TTS
+
+### Flujo de Conversación
+
+1. **Presiona el botón** → Comienza grabación
+2. **Habla tu mensaje** → STT transcribe con Whisper
+3. **Espera respuesta** → LLM procesa con TotalGPT
+4. **Escucha respuesta** → TTS genera audio con Kokoro
+5. **Control total** → Detener audio en cualquier momento
+
+## 🛠️ Desarrollo
+
+### Estructura del Proyecto
+
+```
+valper-ai/
+├── backend/               # FastAPI + Servicios IA
+│   ├── app/
+│   │   ├── api/          # Endpoints REST
+│   │   │   └── services/     # STT, TTS, LLM
+│   │   ├── models/       # Esquemas Pydantic
+│   │   └── services/     # STT, TTS, LLM
+│   ├── .env             # Variables de entorno
+│   └── requirements.txt # Dependencias Python
+├── frontend/             # React + Cyberpunk UI
+│   ├── src/
+│   │   ├── App.js       # Componente principal
+│   │   └── App.css      # Estilos cyberpunk
+│   └── package.json     # Dependencias Node.js
+├── scripts/             # Scripts de configuración
+├── venv_*/              # Entornos virtuales
+└── docs/               # Documentación
+```
+
+### Scripts Disponibles
+
+- `setup_quick_install.sh` - Instalación completa automática
+- `scripts/start_backend.sh` - Iniciar servidor FastAPI  
+- `scripts/start_frontend.sh` - Iniciar aplicación React
+- `scripts/test_complete_installation.sh` - Verificar instalación
+- `scripts/setup_*_environment.sh` - Configurar entornos específicos
+
+## 📊 Estado de Servicios
+
+### Verificar Estado en Tiempo Real
+
+```bash
+# Backend status
 curl http://localhost:8000/health
 
-# Verificar frontend
+# Frontend status  
 curl http://localhost:3000
 
-# Probar STT con audio de ejemplo
-curl -X POST "http://localhost:8000/api/v1/stt" \
-  -H "Content-Type: multipart/form-data" \
-  -F "audio=@models/audio/2830-3980-0043.wav"
+# Nginx status
+sudo systemctl status nginx
+
+# Procesos activos
+ps aux | grep -E "(uvicorn|node)"
 ```
 
-### Checklist de Verificación
+### Logs y Debugging
 
-- [ ] Python 3.11+ instalado (`python --version`)
-- [ ] Entorno virtual aislado creado (`ls venv/`)
-- [ ] GPU detectada correctamente (si disponible)
-- [ ] PyTorch con CUDA funcionando (`python -c "import torch; print(torch.cuda.is_available())"`)
-- [ ] Dependencias instaladas (`pip list | grep fastapi`)
-- [ ] Modelos descargados (`ls models/`)
-- [ ] Backend funcionando (`curl localhost:8000/health`)
-- [ ] Frontend funcionando (`curl localhost:3000`)
-- [ ] Micrófono accesible (permisos del navegador)
-
-## 🚨 Solución de Problemas
-
-### Error: Python 3.11+ no encontrado
 ```bash
-# macOS
-brew install python@3.11
+# Logs de Nginx
+sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
 
-# Ubuntu/Debian
-sudo add-apt-repository ppa:deadsnakes/ppa
-sudo apt update
-sudo apt install python3.11 python3.11-venv python3.11-dev
+# Logs del sistema
+journalctl -u nginx -f
 
-# Verificar instalación
-python3.11 --version
+# Debug del backend
+./scripts/start_backend.sh  # Ver output en consola
+
+# Debug del frontend
+./scripts/start_frontend.sh  # Ver output en consola
 ```
 
-### Error: GPU no detectada
+## 🔧 Solución de Problemas
+
+### Problemas Comunes
+
+#### "No se puede acceder al micrófono"
+- ✅ Usar HTTPS: `https://tu-ip`
+- ✅ Aceptar certificado autofirmado
+- ✅ Permitir micrófono en navegador
+
+#### "Backend no responde"
 ```bash
-# Verificar drivers NVIDIA
-nvidia-smi
+# Verificar entorno virtual
+source venv_backend/bin/activate
+pip list | grep fastapi
 
-# Reinstalar CUDA toolkit si es necesario
-sudo apt install nvidia-cuda-toolkit
+# Verificar .env
+cat backend/.env
 
-# Reejecutar setup
-./scripts/setup_environment.sh
-```
-
-### Error: Conflictos con otros proyectos
-```bash
-# El entorno está completamente aislado, pero si hay problemas:
-rm -rf venv
-./scripts/setup_environment.sh
-```
-
-### Error: "Permission denied"
-```bash
-# Dar permisos a todos los scripts
-chmod +x scripts/*.sh activate_valper.sh
-
-# Verificar propiedad
-ls -la scripts/
-```
-
-### Logs de Depuración
-
-```bash
-# Ver logs del backend
-tail -f logs/valper.log
-
-# Ver información del entorno
-cat logs/environment_info.txt
-
-# Activar modo debug
-export DEBUG=true
-source ./activate_valper.sh
-./scripts/start_backend.sh
-```
-
-## 📊 Monitoreo del Sistema
-
-### El script de activación muestra automáticamente:
-- ✅ Estado de Python y entorno virtual
-- ✅ Estado de GPU y CUDA
-- ✅ Modelos descargados
-- ✅ Servicios corriendo
-- ✅ Puertos en uso
-
-### Monitoreo manual:
-```bash
-# Uso de GPU
-nvidia-smi
-
-# Uso de memoria
-htop
-
-# Estado de servicios
-source ./activate_valper.sh  # Muestra estado completo
-```
-
-## 🔄 Actualización
-
-### Actualizar el Código
-
-```bash
-# Obtener últimos cambios
-git pull origin main
-
-# Reactivar entorno actualizado
-source ./activate_valper.sh
-
-# Actualizar dependencias si es necesario
+# Reinstalar dependencias
 pip install -r backend/requirements.txt
-
-# Reiniciar servicios
-./scripts/start_backend.sh
-./scripts/start_frontend.sh
 ```
 
-## 🎯 Siguientes Pasos
+#### "Frontend no carga"
+```bash
+# Limpiar cache
+cd frontend
+rm -rf node_modules package-lock.json
+npm install
 
-Una vez que tengas Valper funcionando:
+# Verificar puerto
+netstat -tulpn | grep :3000
+```
 
-1. **Explora la API**: http://localhost:8000/docs
-2. **Personaliza voces**: Modifica `TTSService` 
-3. **Integra LLM**: Añade ChatGPT/Claude al endpoint de conversación
-4. **Optimiza GPU**: Experimenta con diferentes configuraciones CUDA
-5. **Despliega en producción**: Usa Docker en un servidor
-6. **Contribuye**: Envía PRs con mejoras
+#### "Error SSL/HTTPS"
+```bash
+# Recrear certificados
+sudo rm -rf /etc/ssl/valper/*
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/valper/valper.key \
+  -out /etc/ssl/valper/valper.crt \
+  -subj "/C=US/ST=State/L=City/O=Valper-AI/CN=$SERVER_IP" \
+  -addext "subjectAltName=IP:$SERVER_IP,DNS:localhost"
 
-## 📞 Soporte
+# Recargar Nginx
+sudo systemctl reload nginx
+```
 
-Si encuentras problemas:
+## 📚 Documentación Adicional
 
-1. Ejecuta `source ./activate_valper.sh` para ver estado completo
-2. Revisa `logs/environment_info.txt` para información técnica
-3. Consulta la documentación en `docs/`
-4. Busca en issues de GitHub
-5. Crea un nuevo issue con logs detallados
+- **[README Principal](../README.md)** - Descripción general del proyecto
+- **[Instalación Completa](INSTALACION_COMPLETA.md)** - Guía detallada paso a paso
+- **[API Reference](API.md)** - Documentación de endpoints
+- **[Arquitectura](README.md)** - Detalles técnicos y desarrollo
 
-## 💡 Beneficios del Entorno Aislado
+---
 
-✅ **Sin conflictos**: Tu GPU y dependencias están aisladas  
-✅ **Optimizado**: PyTorch configurado específicamente para tu hardware  
-✅ **Reproducible**: Mismas versiones en cualquier máquina  
-✅ **Fácil cleanup**: `rm -rf venv` para empezar de cero  
-✅ **Estado visible**: El script de activación muestra todo el estado  
-
-¡Disfruta usando Valper AI Assistant! 🎉 
+**🎉 ¡Valper AI listo para usar!** Tu asistente de voz del futuro está operativo. 

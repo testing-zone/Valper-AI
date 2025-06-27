@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import UploadFile
 
 class TTSRequest(BaseModel):
-    text: str = Field(..., description="Text to convert to speech", max_length=1000)
+    text: str = Field(..., description="Text to convert to speech", max_length=5000)
     voice: str = Field(default='af_heart', description="Voice to use for synthesis")
 
 class TTSResponse(BaseModel):

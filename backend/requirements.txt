@@ -1,43 +1,50 @@
-# Core FastAPI dependencies - optimized for Python 3.11+
+# ===================================================
+# Valper AI Backend Requirements v2.0
+# Complete dependency list for voice assistant
+# ===================================================
+
+# Core FastAPI dependencies - Latest stable versions
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 websockets==12.0
 pydantic==2.5.0
 
-# Audio processing - stable versions for Python 3.11+
+# Audio processing - Optimized for Python 3.11+
 numpy==1.24.3
 soundfile==0.12.1
+librosa>=0.10.1
+scipy>=1.11.0
 
-# PyTorch - will be installed separately based on GPU detection
-# torch==2.1.0  # Installed by setup script with proper CUDA support
-# torchaudio==2.1.0  # Installed by setup script with proper CUDA support
-
-# AI models
+# AI models and APIs
 openai-whisper>=20231117
 kokoro>=0.9.2
-
-# LLM API
 requests>=2.31.0
+httpx==0.25.2
 
-# Security and utilities
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+# Environment management and configuration
 python-dotenv==1.0.0
 aiofiles==23.2.1
-httpx==0.25.2
+
+# Security and authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Performance monitoring and system info
+psutil>=5.9.0
 
 # Development and testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
 
+# Additional audio codec support
+pydub>=0.25.1
+
 # GPU optimization libraries (optional, installed conditionally)
-# accelerate>=0.24.0  # For GPU acceleration
-# transformers>=4.35.0  # For advanced AI models
+# torch>=2.1.0  # Installed by setup script with proper CUDA support
+# torchaudio>=2.1.0  # Installed by setup script with proper CUDA support
+# accelerate>=0.24.0  # For GPU acceleration if available
+# transformers>=4.35.0  # For advanced AI models if needed
 
-# Additional audio processing
-librosa>=0.10.1  # For advanced audio analysis
-scipy>=1.11.0  # Scientific computing
-
-# Performance monitoring
-psutil>=5.9.0  # System monitoring 
+# Note: PyTorch dependencies are handled by setup scripts
+# to ensure proper CUDA/CPU compatibility based on hardware 
