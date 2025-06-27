@@ -1,6 +1,6 @@
 # 🎤 Valper AI - Asistente de Voz Inteligente
 
-**Valper AI** es un asistente de voz completo que combina **Speech-to-Text**, **Large Language Model** y **Text-to-Speech** para crear conversaciones naturales por voz. Diseñado con una interfaz cyberpunk moderna y capacidades de IA avanzadas.
+**Valper AI** es un asistente de voz completo que combina **Speech-to-Text**, **Large Language Model** y **Text-to-Speech** para crear conversaciones naturales por voz. \
 
 ## 🌟 ¿Qué hace Valper AI?
 
@@ -16,7 +16,6 @@ Valper AI te permite tener **conversaciones completas por voz** con un asistente
 - **🎙️ Speech-to-Text**: OpenAI Whisper para transcripción precisa
 - **🤖 LLM Integration**: TotalGPT API con modelo Sao10K-72B-Qwen2.5-Kunou-v1
 - **🗣️ Text-to-Speech**: Kokoro TTS con voces naturales japonesas
-- **🌐 Interfaz Moderna**: React con diseño cyberpunk y efectos visuales
 - **🔒 Acceso Seguro**: HTTPS con certificados SSL para acceso al micrófono
 - **⚡ Tiempo Real**: Procesamiento rápido y respuestas fluidas
 - **🎵 Control de Audio**: Detener/reanudar audio en cualquier momento
@@ -156,31 +155,3 @@ El acceso al micrófono requiere HTTPS. Los scripts incluyen configuración auto
 - ✅ **HTTPS**: Certificados SSL configurados
 - ✅ **Audio Control**: Start/Stop funcional
 - ✅ **Despliegue**: Scripts de instalación listos
-
-## 📚 Documentación
-
-- **[Setup Detallado](docs/SETUP.md)** - Instalación paso a paso
-- **[API Reference](docs/API.md)** - Documentación de endpoints
-- **[Development](docs/README.md)** - Guía para desarrolladores
-
-## 🤝 Contribuir
-
-1. Fork el proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/nueva-funcionalidad`)
-3. Commit tus cambios (`git commit -m 'Agregar nueva funcionalidad'`)
-4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
-5. Abre un Pull Request
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
-
-## 🔧 Soporte
-
-- **Issues**: [GitHub Issues](https://github.com/tu-usuario/valper-ai/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/tu-usuario/valper-ai/discussions)
-- **Email**: soporte@valper-ai.com
-
----
-
-**Valper AI** - *Tu asistente de voz del futuro* 🚀
