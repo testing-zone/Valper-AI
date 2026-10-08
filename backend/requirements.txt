@@ -11,16 +11,26 @@ websockets==12.0
 pydantic==2.5.0
 
 # Audio processing - Optimized for Python 3.11+
-numpy==1.24.3
-soundfile==0.12.1
+numpy>=1.24
+soundfile>=0.12.1
 librosa>=0.10.1
 scipy>=1.11.0
 
 # AI models and APIs
-openai-whisper>=20231117
+openai-whisper>=20250625
+mlx-whisper>=0.4; platform_system == "Darwin" and platform_machine == "arm64"
 kokoro>=0.9.2
 requests>=2.31.0
 httpx==0.25.2
+
+# Assistant: scheduling, news feeds
+apscheduler>=3.10,<4
+feedparser>=6.0.11
+# Reading the articles behind the headlines
+trafilatura>=2.0
+googlenewsdecoder>=0.1.7
+selectolax<1  # googlenewsdecoder still imports the old backend
+tzdata
 
 # Environment management and configuration
 python-dotenv==1.0.0

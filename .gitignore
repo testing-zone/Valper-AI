@@ -23,6 +23,7 @@ MANIFEST
 
 # Virtual environments
 venv/
+.venv/
 venv_backend/
 venv_stt/
 venv_tts/
@@ -94,3 +95,6 @@ models/*.safetensors
 # Test files
 test_*.wav
 test_*.mp3 
+# Valper runtime data (db, memory notes, research, audio)
+data/
+.env

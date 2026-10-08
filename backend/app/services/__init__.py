@@ -1,1 +1,1 @@
-# Services module for Valper AI Assistant 
+# Services module for the Talos assistant 

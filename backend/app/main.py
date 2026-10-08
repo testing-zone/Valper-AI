@@ -1,78 +1,71 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from app import scheduler
+from app.api import routes
+from app.api.routes import router
+from app.tools import notify
+from app.core import db
+from app.core.config import ROOT_DIR, settings
 from app.services.stt_service import STTService
 from app.services.tts_service import TTSService
-from app.services.llm_service import LLMService
-from app.api.routes import router
-import os
-import tempfile
-import logging
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="Valper AI Assistant",
-    description="Voice assistant with speech-to-text, LLM, and text-to-speech capabilities",
-    version="1.0.0"
-)
+stt_service = STTService()
+tts_service = TTSService()
+routes.stt_service = stt_service
+routes.tts_service = tts_service
+notify.tts = tts_service
 
-# CORS middleware
+
+async def _load_speech_models():
+    """Heavy models load in the background so the API and scheduler are up immediately."""
+    for name, service in (("STT", stt_service), ("TTS", tts_service)):
+        try:
+            await service.initialize()
+        except Exception as e:
+            logger.error(f"{name} disabled: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info(f"Starting {settings.NAME}...")
+    db.init()
+    scheduler.start()
+    loader = asyncio.create_task(_load_speech_models())
+    yield
+    loader.cancel()
+    scheduler.shutdown()
+
+
+app = FastAPI(title=f"{settings.NAME} — asistente personal", version="3.0.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for external access
-    allow_credentials=True,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize services as global instances
-stt_service = STTService()
-tts_service = TTSService()
-llm_service = LLMService()
 
-# Share services with router
-from app.api import routes
-routes.stt_service = stt_service
-routes.tts_service = tts_service
-routes.llm_service = llm_service
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
-    logger.info("Starting Valper AI Assistant...")
-    
-    # Initialize STT service
-    try:
-        await stt_service.initialize()
-        logger.info("STT service initialized successfully!")
-    except Exception as e:
-        logger.error(f"Failed to initialize STT service: {e}")
-        # Don't raise the exception, let the service start with STT disabled
-    
-    # Initialize TTS service
-    try:
-        await tts_service.initialize()
-        logger.info("TTS service initialized successfully!")
-    except Exception as e:
-        logger.error(f"Failed to initialize TTS service: {e}")
-        # Don't raise the exception, let the service start with TTS disabled
-    
-    logger.info("Valper AI Assistant startup completed!")
-
-@app.get("/")
-async def root():
-    return {"message": "Valper AI Assistant API", "version": "1.0.0"}
-
-# Include API routes
 app.include_router(router, prefix="/api")
+
+# Serve the built React app (npm run build) so everything runs on one port
+FRONTEND_BUILD = ROOT_DIR / "frontend" / "build"
+if FRONTEND_BUILD.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_BUILD, html=True), name="frontend")
+else:
+    @app.get("/")
+    async def root():
+        return {"message": f"{settings.NAME} API", "version": "3.0.0", "ui": "run: npm run build in frontend/"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(app, host=settings.HOST, port=settings.PORT)

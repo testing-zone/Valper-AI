@@ -1,392 +1,363 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
+import { API, api } from './api';
+import ChatPanel from './components/ChatPanel';
+import FeedPanel from './components/FeedPanel';
+import ResearchPanel from './components/ResearchPanel';
+import MemoryPanel from './components/MemoryPanel';
+import RemindersPanel from './components/RemindersPanel';
+import { Clock, LampBank } from './components/Console';
+import HeadSchematic from './components/HeadSchematic';
+import { EFFECTS, playWithEffect } from './audioFx';
+
+const TABS = [
+  ['chat', '01', 'DIÁLOGO'], ['feed', '02', 'BOLETINES'], ['research', '03', 'INVESTIGACIÓN'],
+  ['memory', '04', 'MEMORIA'], ['reminders', '05', 'AGENDA'],
+];
+const LANGS = [['es', 'ES'], ['en', 'EN'], ['auto', 'AUTO']];
+const SAMPLES = {
+  es: (n, t) => `Buenas noches${t ? `, ${t}` : ''}. Soy ${n}. Todos los sistemas operan con normalidad.`,
+  en: (n, t) => `Good evening${t ? `, ${t}` : ''}. ${n} at your service. All systems are operating normally.`,
+};
+
+const readPref = (key, fallback) => {
+  try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
+  catch (e) { return fallback; }
+};
+const writePref = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ } };
 
 function App() {
-  const [ttsText, setTtsText] = useState('');
-  const [generatedAudio, setGeneratedAudio] = useState(null);
-  const [transcriptionResult, setTranscriptionResult] = useState('');
+  const [name, setName] = useState('');
+  const [identity, setIdentity] = useState({ location: '', timezone: undefined, title: '', cities: [] });
+  const [tab, setTab] = useState(() => {
+    const fromHash = window.location.hash.slice(1);
+    return TABS.some(([k]) => k === fromHash) ? fromHash : readPref('assistant.tab', 'chat');
+  });
+  const [autoVoice, setAutoVoice] = useState(() => readPref('assistant.autoVoice', true));
+  const [prefs, setPrefs] = useState({ language: 'es', voice_es: '', voice_en: '', effect: 'none' });
+  const [voices, setVoices] = useState([]);
+  const [status, setStatus] = useState({});
+  const [messages, setMessages] = useState([]);
+  const [freshId, setFreshId] = useState(null);
+  const [feed, setFeed] = useState([]);
+  const [unread, setUnread] = useState(0);
+  const [jobs, setJobs] = useState([]);
+  const [selectedResearch, setSelectedResearch] = useState(null);
+  const [selectedNote, setSelectedNote] = useState(null);
+  const [remindersVersion, setRemindersVersion] = useState(0);
+  const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [conversationHistory, setConversationHistory] = useState([]);
-  const [servicesStatus, setServicesStatus] = useState({});
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const currentAudioRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState('');
 
-  const API_BASE_URL = window.location.protocol + '//' + window.location.host + '/api';
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const audioRef = useRef(null);
+  const autoVoiceRef = useRef(autoVoice);
+  autoVoiceRef.current = autoVoice;
+  const effectRef = useRef(prefs.effect);
+  effectRef.current = prefs.effect;
+
+  useEffect(() => { writePref('assistant.tab', tab); window.history.replaceState(null, '', `#${tab}`); }, [tab]);
+  useEffect(() => writePref('assistant.autoVoice', autoVoice), [autoVoice]);
+  useEffect(() => { if (name) document.title = name; }, [name]);
+
+  const loadMessages = () => api('/messages?limit=60').then((d) => { setMessages(d.messages); return d.messages; }).catch(() => []);
+  const loadFeed = () => api('/feed?limit=40').then((d) => { setFeed(d.items); setUnread(d.unread); }).catch(() => {});
+  const loadJobs = () => api('/research').then((d) => setJobs(d.jobs)).catch(() => {});
+  const loadStatus = () => api('/services/status').then(setStatus).catch(() => setStatus({}));
 
   useEffect(() => {
-    checkServicesStatus();
+    api('/identity').then((d) => { setName(d.name); setIdentity(d); }).catch(() => setName('ASISTENTE'));
+    api('/voices').then((d) => setVoices(d.voices)).catch(() => {});
+    api('/prefs').then(setPrefs).catch(() => {});
+    loadMessages(); loadFeed(); loadJobs(); loadStatus();
+    const t = setInterval(loadStatus, 15000);
+    return () => clearInterval(t);
   }, []);
 
-  const checkServicesStatus = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/services/status`);
-      const data = await response.json();
-      setServicesStatus(data);
-    } catch (error) {
-      console.error('Error checking services status:', error);
-    }
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        await processConversation(audioBlob);
-      };
-
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Error starting recording:', error);
-      alert('Error accessing microphone. Please ensure you have granted microphone permissions.');
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      setIsRecording(false);
-    }
-  };
-
+  // ---- audio ---------------------------------------------------------------
   const stopAudio = () => {
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.currentTime = 0;
-      currentAudioRef.current = null;
-      setIsPlayingAudio(false);
-    }
+    if (audioRef.current) { audioRef.current.stop(); audioRef.current = null; }
+    setIsPlaying(false);
   };
 
-  const handleMainButtonClick = () => {
-    if (isPlayingAudio) {
-      // If audio is playing, stop it
-      stopAudio();
-    } else if (isRecording) {
-      // If recording, stop recording
-      stopRecording();
-    } else if (!isProcessing) {
-      // If idle, start recording
-      startRecording();
-    }
-  };
-
-  const processConversation = async (audioBlob) => {
-    setIsProcessing(true);
+  // voice: explicit voice id to preview; otherwise the server picks it from the language prefs
+  const speak = useCallback(async (text, voice) => {
     try {
-      const formData = new FormData();
-      formData.append('audio_file', audioBlob, 'recording.wav');
-      formData.append('conversation_history', JSON.stringify(conversationHistory));
-
-      const response = await fetch(`${API_BASE_URL}/conversation`, {
-        method: 'POST',
-        body: formData,
+      const res = await fetch(`${API}/tts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: voice || undefined }),
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      // Update conversation history
-      const newHistory = [
-        ...conversationHistory,
-        { role: 'user', content: result.user_text },
-        { role: 'assistant', content: result.assistant_text }
-      ];
-      setConversationHistory(newHistory);
-      
-      // Set transcription result
-      setTranscriptionResult(`Usuario: ${result.user_text}\nAsistente: ${result.assistant_text}`);
-      
-      // Play the generated audio
-      const audioResponse = await fetch(`${API_BASE_URL}/tts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text: result.assistant_text }),
+      if (!res.ok) return;
+      const blob = await res.blob();
+      if (audioRef.current) audioRef.current.stop();
+      setIsPlaying(true);
+      audioRef.current = await playWithEffect(blob, effectRef.current, () => {
+        setIsPlaying(false);
+        audioRef.current = null;
       });
+      loadStatus();
+    } catch (e) {
+      setIsPlaying(false);
+    }
+  }, []);
 
-      if (audioResponse.ok) {
-        const audioBlob = await audioResponse.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        setGeneratedAudio(audioUrl);
-        
-        // Auto-play the response
-        const audio = new Audio(audioUrl);
-        currentAudioRef.current = audio;
-        setIsPlayingAudio(true);
-        
-        // Handle audio events
-        audio.onended = () => {
-          setIsPlayingAudio(false);
-          currentAudioRef.current = null;
-        };
-        
-        audio.onerror = () => {
-          setIsPlayingAudio(false);
-          currentAudioRef.current = null;
-        };
-        
-        audio.play().catch(error => {
-          console.error('Error playing audio:', error);
-          setIsPlayingAudio(false);
-          currentAudioRef.current = null;
-        });
-      }
+  const updatePrefs = async (changes) => {
+    setPrefs((p) => ({ ...p, ...changes }));
+    try { setPrefs(await api('/prefs', { method: 'PUT', body: changes })); loadStatus(); }
+    catch (e) { setError(e.message); }
+  };
 
-    } catch (error) {
-      console.error('Error processing conversation:', error);
-      alert('Error processing conversation. Please try again.');
+  // ---- live events from the backend -----------------------------------------
+  useEffect(() => {
+    const es = new EventSource(`${API}/events`);
+    es.addEventListener('feed', (e) => {
+      const item = JSON.parse(e.data);
+      setFeed((prev) => [item, ...prev.filter((x) => x.id !== item.id)]);
+      setUnread((n) => n + 1);
+      if (item.kind === 'reminder') setRemindersVersion((v) => v + 1);
+      if (item.speak && autoVoiceRef.current) speak(item.speech || `${item.title}. ${item.body}`);
+    });
+    es.addEventListener('research', () => loadJobs());
+    return () => es.close();
+  }, [speak]);
+
+  useEffect(() => {
+    if (tab === 'feed' && unread > 0) {
+      api('/feed/read', { method: 'POST' }).then(() => setUnread(0)).catch(() => {});
+    }
+  }, [tab, unread]);
+
+  // ---- talking to the assistant ---------------------------------------------
+  const handleReply = async (result) => {
+    const msgs = await loadMessages();
+    const last = msgs[msgs.length - 1];
+    if (last && last.role === 'assistant') setFreshId(last.id);
+    if (result.tools?.some((t) => t.name === 'deep_research')) loadJobs();
+    if (result.tools?.some((t) => t.name.includes('reminder'))) setRemindersVersion((v) => v + 1);
+    loadStatus();
+    if (autoVoice) speak(result.assistant_text);
+  };
+
+  const sendText = async () => {
+    const text = input.trim();
+    if (!text || isProcessing) return;
+    setInput('');
+    setError('');
+    setIsProcessing(true);
+    setTab('chat');
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: text }]);
+    try {
+      await handleReply(await api('/chat', { method: 'POST', body: { message: text } }));
+    } catch (e) {
+      setError(e.message);
+      loadMessages();
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const generateTTS = async () => {
-    if (!ttsText.trim()) {
-      alert('Please enter some text to convert to speech');
-      return;
-    }
-
+  const sendAudio = async (blob) => {
+    setIsProcessing(true);
+    setError('');
+    setTab('chat');
     try {
-      const response = await fetch(`${API_BASE_URL}/tts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text: ttsText }),
-      });
-
-      if (response.ok) {
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        setGeneratedAudio(audioUrl);
-      } else {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Error generating TTS:', error);
-      alert('Error generating speech. Please try again.');
+      const form = new FormData();
+      form.append('audio_file', blob, 'recording.webm');
+      const res = await fetch(`${API}/conversation`, { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      await handleReply(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const playAudio = () => {
-    if (generatedAudio) {
-      // Stop current audio if playing
-      if (currentAudioRef.current) {
-        stopAudio();
-      }
-      
-      const audio = new Audio(generatedAudio);
-      currentAudioRef.current = audio;
-      setIsPlayingAudio(true);
-      
-      // Handle audio events
-      audio.onended = () => {
-        setIsPlayingAudio(false);
-        currentAudioRef.current = null;
-      };
-      
-      audio.onerror = () => {
-        setIsPlayingAudio(false);
-        currentAudioRef.current = null;
-      };
-      
-      audio.play().catch(error => {
-        console.error('Error playing audio:', error);
-        setIsPlayingAudio(false);
-        currentAudioRef.current = null;
-      });
-    }
-  };
-
-  const testSTT = async () => {
-    if (!generatedAudio) {
-      alert('Please generate audio first');
-      return;
-    }
-
+  const startRecording = async () => {
     try {
-      const response = await fetch(generatedAudio);
-      const audioBlob = await response.blob();
-
-      const formData = new FormData();
-      formData.append('audio_file', audioBlob, 'test.wav');
-
-      const sttResponse = await fetch(`${API_BASE_URL}/stt`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (sttResponse.ok) {
-        const result = await sttResponse.json();
-        setTranscriptionResult(`Transcripción: ${result.text}`);
-      } else {
-        throw new Error(`HTTP error! status: ${sttResponse.status}`);
-      }
-    } catch (error) {
-      console.error('Error testing STT:', error);
-      alert('Error testing STT. Please try again.');
-    }
-  };
-
-  const clearHistory = () => {
-    setConversationHistory([]);
-    setTranscriptionResult('');
-    setGeneratedAudio(null);
-    
-    // Stop any playing audio
-    if (currentAudioRef.current) {
       stopAudio();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => chunksRef.current.push(e.data);
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        sendAudio(new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' }));
+      };
+      rec.start();
+      recorderRef.current = rec;
+      setIsRecording(true);
+    } catch (e) {
+      setError('No pude acceder al micrófono. Revisa los permisos del navegador.');
     }
   };
+
+  const stopRecording = () => {
+    if (recorderRef.current && recorderRef.current.state === 'recording') recorderRef.current.stop();
+    setIsRecording(false);
+  };
+
+  const toggleMain = () => {
+    if (isPlaying) stopAudio();
+    else if (isRecording) stopRecording();
+    else if (!isProcessing) startRecording();
+  };
+  const toggleRef = useRef(toggleMain);
+  toggleRef.current = toggleMain;
+
+  // Ctrl+Space toggles the microphone while the tab is focused
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); toggleRef.current(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const clearChat = async () => {
+    if (!window.confirm('¿Borrar toda la conversación? (la memoria y las notas se quedan)')) return;
+    await api('/messages', { method: 'DELETE' });
+    setMessages([]);
+  };
+
+  const openNote = (slug) => { setSelectedNote(slug); setTab('memory'); };
+  const openResearch = (id) => { setSelectedResearch(id); setTab('research'); };
+
+  const state = isProcessing ? 'processing' : isPlaying ? 'playing' : isRecording ? 'recording' : 'idle';
+  const stateLabel = { idle: 'EN ESPERA', recording: 'ESCUCHANDO', processing: 'PROCESANDO', playing: 'TRANSMITIENDO' }[state];
+  const voicesFor = (lang) => voices.filter((v) => (lang === 'es' ? v.lang === 'es' : v.lang.startsWith('en')));
+  const displayName = (name || '').toUpperCase();
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1 data-text="VALPER AI">VALPER AI</h1>
-        <p>NEURAL VOICE ASSISTANT</p>
+    <div className={`App state-${state}`}>
+      <div className="crt-overlay" aria-hidden="true" />
+
+      <header className="masthead">
+        <div className="nameplate">
+          <div className="nameplate-name" data-text={displayName}>{displayName}</div>
+          <div className="nameplate-sub">SISTEMA DE CONTROL PERSONAL{identity.location ? ` · ${identity.location.toUpperCase()}` : ''} · MOD. III</div>
+        </div>
+        <Clock timeZone={identity.timezone} />
       </header>
 
-      <div className="services-status">
-        <h3>SYSTEM STATUS</h3>
-        <div className="status-grid">
-          <div className={`status-item ${servicesStatus.stt?.status === 'ready' ? 'ready' : 'not-ready'}`}>
-            STT: {servicesStatus.stt?.status === 'ready' ? 'ONLINE' : 'OFFLINE'}
-          </div>
-          <div className={`status-item ${servicesStatus.tts?.status === 'ready' ? 'ready' : 'not-ready'}`}>
-            TTS: {servicesStatus.tts?.status === 'ready' ? 'ONLINE' : 'OFFLINE'}
-          </div>
-          <div className={`status-item ${servicesStatus.llm?.status === 'ready' ? 'ready' : 'not-ready'}`}>
-            LLM: {servicesStatus.llm?.status === 'ready' ? 'ONLINE' : 'OFFLINE'}
-          </div>
-        </div>
-      </div>
+      <LampBank count={96} busy={state !== 'idle'} />
 
-      <div className="main-container">
-        {/* Main Voice Interface */}
-        <div className="voice-interface">
-          <div className="main-button-container">
-            <button 
-              className={`main-record-button ${isRecording ? 'recording' : ''} ${isProcessing ? 'processing' : ''} ${isPlayingAudio ? 'playing' : ''}`}
-              onClick={handleMainButtonClick}
+      <main className="deck">
+        <section className="console">
+          <HeadSchematic
+            jobs={jobs}
+            status={status}
+            active={{
+              ear: isRecording,
+              brain: isProcessing,
+              mouth: isPlaying,
+              claude: jobs.some((j) => j.status === 'running' || j.status === 'queued'),
+            }}
+          />
+
+          <div className="aperture-wrap">
+            <button className={`aperture ${state}`} onClick={toggleMain} disabled={isProcessing} title="Ctrl+Espacio">
+              <span className="ring r1" /><span className="ring r2" /><span className="ring r3" />
+              <span className="grille" />
+              <span className="aperture-core" />
+            </button>
+            <div className="aperture-label">{stateLabel}</div>
+            <div className="hint">[CTRL + ESPACIO] PARA HABLAR</div>
+          </div>
+
+          <div className="composer">
+            <span className="prompt-sigil">&gt;</span>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') sendText(); }}
+              placeholder="INSTRUCCIÓN_"
               disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <div className="processing-animation">
-                  <div className="spinner"></div>
-                  <div className="processing-text">THINKING</div>
-                </div>
-              ) : isPlayingAudio ? (
-                <div className="playing-content">
-                  <div className="stop-icon">⏹</div>
-                  <div className="playing-text">STOP</div>
-                </div>
-              ) : isRecording ? (
-                <div className="recording-content">
-                  <div className="pulse-ring"></div>
-                  <div className="recording-text">LISTENING</div>
-                </div>
-              ) : (
-                <div className="start-content">
-                  <div className="start-text">START</div>
-                </div>
-              )}
-            </button>
-          </div>
-
-          {isRecording && (
-            <div className="voice-visualizer">
-              <div className="wave-bar"></div>
-              <div className="wave-bar"></div>
-              <div className="wave-bar"></div>
-              <div className="wave-bar"></div>
-              <div className="wave-bar"></div>
-            </div>
-          )}
-
-          {isProcessing && (
-            <div className="processing-stages">
-              <div className="stage">
-                <div className="stage-icon">🎤</div>
-                <div className="stage-text">Processing Audio</div>
-              </div>
-              <div className="stage">
-                <div className="stage-icon">🧠</div>
-                <div className="stage-text">Neural Analysis</div>
-              </div>
-              <div className="stage">
-                <div className="stage-icon">🔊</div>
-                <div className="stage-text">Generating Response</div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Conversation History */}
-        {conversationHistory.length > 0 && (
-          <div className="conversation-section">
-            <h2>MEMORY BANK</h2>
-            <div className="history-list">
-              {conversationHistory.map((msg, index) => (
-                <div key={index} className={`history-item ${msg.role}`}>
-                  <strong>{msg.role === 'user' ? '👤 HUMAN:' : '🤖 AI:'}</strong>
-                  <p>{msg.content}</p>
-                </div>
-              ))}
-            </div>
-            <button 
-              className="clear-button"
-              onClick={clearHistory}
-            >
-              CLEAR MEMORY
-            </button>
-          </div>
-        )}
-
-        {/* Voice Synthesis Lab - Bottom */}
-        <div className="synthesis-lab">
-          <h2>VOICE SYNTHESIS LAB</h2>
-          <div className="tts-controls">
-            <textarea
-              value={ttsText}
-              onChange={(e) => setTtsText(e.target.value)}
-              placeholder="Input text for neural voice synthesis..."
-              rows="2"
             />
-            <div className="button-group">
-              <button onClick={generateTTS} disabled={!ttsText.trim()}>
-                SYNTHESIZE
-              </button>
-              <button 
-                onClick={isPlayingAudio ? stopAudio : playAudio} 
-                disabled={!generatedAudio}
-                className={isPlayingAudio ? 'playing' : ''}
-              >
-                {isPlayingAudio ? 'STOP' : 'PLAY'}
-              </button>
-            </div>
+            <button onClick={sendText} disabled={!input.trim() || isProcessing}>TRANSMITIR</button>
           </div>
-        </div>
-      </div>
+
+          <div className="voice-panel">
+            <div className="panel-row">
+              <label className="panel-label">IDIOMA</label>
+              <div className="segmented">
+                {LANGS.map(([k, label]) => (
+                  <button key={k} className={prefs.language === k ? 'active' : ''} onClick={() => updatePrefs({ language: k })}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {['es', 'en'].map((lang) => {
+              const key = `voice_${lang}`;
+              const list = voicesFor(lang);
+              return (
+                <div key={lang} className={`voice-row ${prefs.language !== 'auto' && prefs.language !== lang ? 'dim' : ''}`}>
+                  <span className="voice-lang">{lang.toUpperCase()}</span>
+                  <select value={prefs[key]} onChange={(e) => updatePrefs({ [key]: e.target.value })}>
+                    {prefs[key] && !list.some((v) => v.id === prefs[key]) && <option value={prefs[key]}>{prefs[key]}</option>}
+                    <optgroup label="Presets">
+                      {list.filter((v) => v.preset).map((v) => <option key={v.id} value={v.id}>★ {v.name}</option>)}
+                    </optgroup>
+                    <optgroup label="Voces">
+                      {list.filter((v) => !v.preset).map((v) => (
+                        <option key={v.id} value={v.id}>{v.name} {v.gender === 'm' ? '♂' : '♀'} · {v.lang}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  <button onClick={() => speak(SAMPLES[lang](name, identity.title), prefs[key])}>▶</button>
+                </div>
+              );
+            })}
+            <div className="panel-row">
+              <label className="panel-label">FILTRO</label>
+              <div className="segmented">
+                {EFFECTS.map(([k, label]) => (
+                  <button key={k} className={prefs.effect === k ? 'active' : ''} onClick={() => updatePrefs({ effect: k })}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <label className="switch">
+              <input type="checkbox" checked={autoVoice} onChange={(e) => setAutoVoice(e.target.checked)} />
+              <span className="switch-track"><span className="switch-knob" /></span>
+              RESPUESTA HABLADA
+            </label>
+          </div>
+
+          {error && <div className="error-banner" onClick={() => setError('')}>⚠ {error}</div>}
+        </section>
+
+        <section className="modules">
+          <nav className="tabs">
+            {TABS.map(([key, num, label]) => (
+              <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>
+                <span className="tab-num">{num}</span>{label}
+                {key === 'feed' && unread > 0 && <span className="badge">{unread}</span>}
+              </button>
+            ))}
+          </nav>
+
+          <div className="tab-body">
+            {tab === 'chat' && (
+              <ChatPanel city={identity.cities[0]} messages={messages} freshId={freshId} name={displayName} onClear={clearChat} onNoteClick={openNote} />
+            )}
+            {tab === 'feed' && <FeedPanel location={identity.location} items={feed} onSpeak={speak} onOpenResearch={openResearch} />}
+            {tab === 'research' && (
+              <ResearchPanel jobs={jobs} selectedId={selectedResearch} onSelect={setSelectedResearch} refresh={loadJobs} />
+            )}
+            {tab === 'memory' && <MemoryPanel selectedSlug={selectedNote} onSelect={setSelectedNote} />}
+            {tab === 'reminders' && <RemindersPanel version={remindersVersion} />}
+          </div>
+        </section>
+      </main>
+
+      <footer className="footer-strip">
+        <span>TOTALGPT · QWEN</span><span>KOKORO</span><span>WHISPER</span><span>CLAUDE CODE</span>
+      </footer>
     </div>
   );
 }
 
-export default App; 
+export default App;
