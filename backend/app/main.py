@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app import scheduler
 from app.api import routes
 from app.api.routes import router
+from app.integrations import discord_bot
 from app.tools import notify
 from app.core import db
 from app.core.config import ROOT_DIR, settings
@@ -23,6 +24,8 @@ tts_service = TTSService()
 routes.stt_service = stt_service
 routes.tts_service = tts_service
 notify.tts = tts_service
+discord_bot.stt = stt_service
+discord_bot.tts = tts_service
 
 
 async def _load_speech_models():
@@ -40,8 +43,10 @@ async def lifespan(app: FastAPI):
     db.init()
     scheduler.start()
     loader = asyncio.create_task(_load_speech_models())
+    await discord_bot.start()
     yield
     loader.cancel()
+    await discord_bot.stop()
     scheduler.shutdown()
 
 

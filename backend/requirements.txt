@@ -26,6 +26,9 @@ httpx==0.25.2
 # Assistant: scheduling, news feeds
 apscheduler>=3.10,<4
 feedparser>=6.0.11
+# Discord channel
+discord.py>=2.4
+
 # Reading the articles behind the headlines
 trafilatura>=2.0
 googlenewsdecoder>=0.1.7

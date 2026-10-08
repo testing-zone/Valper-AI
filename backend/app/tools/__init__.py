@@ -3,11 +3,11 @@ with a TOOLS list and add it here."""
 import json
 import logging
 
-from app.tools import articles, finance, jira, memory, news, reminders, research, weather
+from app.tools import articles, finance, jira, memory, news, orca, reminders, research, weather
 
 logger = logging.getLogger(__name__)
 
-_MODULES = [weather, finance, news, articles, memory, reminders, research, jira]
+_MODULES = [weather, finance, news, articles, memory, reminders, research, jira, orca]
 REGISTRY = {t["name"]: t for m in _MODULES for t in m.TOOLS}
 
 

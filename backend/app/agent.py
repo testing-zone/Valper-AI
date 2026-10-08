@@ -20,7 +20,7 @@ HISTORY = 16
 REALTIME = re.compile(
     r"\b(clima|tiempo hace|temperatura|llov|lluvia|weather|temperature|rain|noticia|news|headline|"
     r"lanzamiento|release|jira|ticket|pendiente|recu[eé]rdame|remind|recordatorio|reminder|"
-    r"right now|ahora mismo|en este momento|today|hoy)", re.I)
+    r"right now|ahora mismo|en este momento|today|hoy|orca|agentes|agents|d[oó]lar|dollar|trm)", re.I)
 
 
 def _aged(message: dict) -> str:
@@ -57,6 +57,7 @@ def system_prompt(voice: bool, language: str = "es") -> str:
         "- detalles de una noticia ('¿qué pasó con X?', 'cuéntame más') → search_articles: son los "
         "artículos completos que leíste para los boletines\n"
         "- dólar / tasa de cambio → get_dollar\n"
+        "- agentes de código, Orca, '¿ya terminó…?' → orca_agents\n"
         "- Jira, tickets, qué me falta → jira_pending y list_reminders\n"
         "- 'recuérdame…' → create_reminder\n"
         "- 'guarda/anota/recuerda que…', o cuando te enseñe cómo se hace algo → memory_save "

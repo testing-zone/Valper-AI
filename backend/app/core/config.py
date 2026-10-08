@@ -95,9 +95,18 @@ class Settings:
     # Drop ANTHROPIC_API_KEY for the subprocess so Claude Code uses the claude.ai subscription
     CLAUDE_USE_SUBSCRIPTION = _env("CLAUDE_USE_SUBSCRIPTION", "true").lower() == "true"
 
+    # Orca (Stably AI) coding-agent orchestrator; empty = auto-detect the CLI inside Orca.app
+    ORCA_BIN = _env("ORCA_BIN")
+
     # Notifications
     NOTIFY_MACOS = _env("NOTIFY_MACOS", "true").lower() == "true"
     SPEAK_ON_MAC = _env("SPEAK_ON_MAC", "true").lower() == "true"
+
+    # Discord (optional): DMs with briefings/alerts, and chat with the assistant from anywhere
+    DISCORD_BOT_TOKEN = _env("DISCORD_BOT_TOKEN")
+    DISCORD_USER_ID = _env("DISCORD_USER_ID")  # your user id; nobody else is answered
+    DISCORD_CHANNEL_ID = _env("DISCORD_CHANNEL_ID")  # optional server channel to talk in
+    DISCORD_AUDIO = _env("DISCORD_AUDIO", "true").lower() == "true"  # attach the spoken version
 
     @property
     def jira_enabled(self) -> bool:
