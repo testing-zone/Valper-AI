@@ -118,7 +118,9 @@ async def local_news() -> dict:
         f"Resume las noticias más importantes de hoy en {settings.LOCATION_LABEL} (orden público, movilidad, servicios, "
         "clima, economía local, eventos). Agrupa por ciudad, máximo 8 en total, 1-2 líneas cada una.",
         news.format_items(items), news.format_items(items[:10]))
-    return await notify.push("local", f"Noticias {settings.LOCATION_LABEL}", body, {"count": len(items)})
+    speech = await _spoken(body)
+    return await notify.push("local", f"Noticias {settings.LOCATION_LABEL}", body, {"count": len(items)},
+                             speak=speech or None)
 
 
 async def jira_briefing() -> dict:
