@@ -2,8 +2,9 @@
 voice notes back from anywhere. Only the configured owner is ever answered.
 
 Setup: create an application + bot at https://discord.com/developers/applications,
-enable the "Message Content" intent, invite the bot to a server you share, then set
-DISCORD_BOT_TOKEN and DISCORD_USER_ID in .env.
+enable the "Message Content" intent and put DISCORD_BOT_TOKEN in .env. On start Talos
+posts the invite link and a 6-digit pairing code (feed + macOS notification); send the
+code to the bot and you become its owner. DISCORD_USER_ID can also be set by hand.
 """
 import asyncio
 import logging
@@ -19,12 +20,28 @@ MAX_LEN = 1900  # Discord limit is 2000 per message
 
 _client = None
 _owner = None
+_pair_code = None
 stt = None  # set by main.py
 tts = None
 
 
+def owner_id() -> Optional[int]:
+    from app.core import db
+    value = settings.DISCORD_USER_ID or db.get_prefs().get("discord_owner")
+    return int(value) if value else None
+
+
 def enabled() -> bool:
-    return bool(settings.DISCORD_BOT_TOKEN and settings.DISCORD_USER_ID)
+    return bool(settings.DISCORD_BOT_TOKEN and owner_id())
+
+
+def invite_url() -> str:
+    """The application id is the base64 first segment of the bot token."""
+    import base64
+    first = settings.DISCORD_BOT_TOKEN.split(".")[0]
+    app_id = base64.b64decode(first + "=" * (-len(first) % 4)).decode()
+    # Send Messages + Attach Files + Read Message History + View Channels
+    return f"https://discord.com/oauth2/authorize?client_id={app_id}&scope=bot&permissions=101376"
 
 
 def _chunks(text: str):
@@ -48,7 +65,7 @@ def _chunks(text: str):
 async def _owner_dm():
     global _owner
     if _owner is None and _client:
-        _owner = await _client.fetch_user(int(settings.DISCORD_USER_ID))
+        _owner = await _client.fetch_user(owner_id())
     return _owner
 
 
@@ -58,6 +75,8 @@ async def send(title: str, body: str, audio_path: Optional[str] = None):
         return
     try:
         import discord
+        if not owner_id():
+            return
         user = await _owner_dm()
         text = f"**{title}**\n{body}" if title else body
         # wrap links in <> so Discord doesn't add a big preview for every news link
@@ -122,26 +141,44 @@ async def _handle(message):
 
 
 async def start():
-    global _client
-    if not enabled():
-        logger.info("Discord not configured (DISCORD_BOT_TOKEN / DISCORD_USER_ID)")
+    global _client, _pair_code
+    if not settings.DISCORD_BOT_TOKEN:
+        logger.info("Discord not configured (DISCORD_BOT_TOKEN)")
         return
+    import random
     import discord
+    from app.core import db
+    from app.tools import notify
 
     intents = discord.Intents.default()
     intents.message_content = True
     intents.dm_messages = True
     client = discord.Client(intents=intents)
-    owner_id = int(settings.DISCORD_USER_ID)
     channel_id = int(settings.DISCORD_CHANNEL_ID) if settings.DISCORD_CHANNEL_ID else None
 
     @client.event
     async def on_ready():
+        global _pair_code
         logger.info(f"Discord connected as {client.user}")
+        if not owner_id():
+            _pair_code = f"{random.randint(0, 999999):06d}"
+            await notify.push(
+                "discord", "Conectar Discord",
+                f"1. Invita el bot a un servidor tuyo: {invite_url()}\n"
+                f"2. Mándale este código por mensaje directo (o mencionándolo): **{_pair_code}**")
 
     @client.event
     async def on_message(message):
-        if message.author.bot or message.author.id != owner_id:
+        global _pair_code, _owner
+        if message.author.bot:
+            return
+        if not owner_id():
+            if _pair_code and _pair_code in message.content:
+                db.set_prefs({"discord_owner": str(message.author.id)})
+                _pair_code, _owner = None, None
+                await message.channel.send(f"Emparejado. A partir de ahora solo te respondo a ti, {message.author.name}.")
+            return
+        if message.author.id != owner_id():
             return
         is_dm = message.guild is None
         in_channel = channel_id and message.channel.id == channel_id
