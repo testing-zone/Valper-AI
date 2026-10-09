@@ -20,6 +20,9 @@ def start():
     if settings.MORNING_HOUR:
         scheduler.add_job(briefings.morning, CronTrigger(hour=int(settings.MORNING_HOUR), minute=0),
                           id="morning", **common)
+        # catch up after sleep: checks every 2 minutes, sends at most once per morning
+        scheduler.add_job(briefings.morning_catchup, IntervalTrigger(minutes=2), id="morning_catchup",
+                          max_instances=1, coalesce=True)
     if settings.NIGHT_HOUR:
         scheduler.add_job(briefings.night, CronTrigger(hour=int(settings.NIGHT_HOUR), minute=0),
                           id="night", **common)

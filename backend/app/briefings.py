@@ -243,7 +243,10 @@ async def morning(night: bool = False, preview: bool = False) -> dict:
                 + (f"VERIFIED SUMMARY OF THE WORK: {quote['about']}\n" if quote.get("about") else "") + "\n"
                 + "\n\n".join(facts)},
         ], max_tokens=900, temperature=0.8)
-    except LLMError:
+    except Exception as e:  # network cut (Mac going back to sleep), rate limit, etc.
+        logger.warning(f"Morning text generation failed: {e}")
+        if not preview:
+            raise
         text = f"> {quote['text']}\n— {quote['author']}, *{quote['work']}*\n\n" + "\n\n".join(facts)
     title = (db.t("Buenas noches", "Goodnight") if night else db.t("Buenos días", "Good morning"))
     if preview:
@@ -254,6 +257,20 @@ async def morning(night: bool = False, preview: bool = False) -> dict:
 
 async def night() -> dict:
     return await morning(night=True)
+
+
+async def morning_catchup():
+    """If the Mac was asleep (or the run failed) at MORNING_HOUR, send it as soon as it wakes, until noon."""
+    if not settings.MORNING_HOUR:
+        return
+    now = _now()
+    if not (int(settings.MORNING_HOUR) <= now.hour < 12):
+        return
+    today = now.strftime("%Y-%m-%d")
+    if db.query_one("SELECT id FROM feed WHERE kind = 'morning' AND created_at >= ?", (today,)):
+        return
+    logger.info("Morning message missed (Mac asleep or failed); sending it now")
+    await morning()
 
 
 def strip_for_speech(text: str) -> str:
