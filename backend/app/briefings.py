@@ -172,7 +172,7 @@ def _pick_quote() -> dict:
     return quote
 
 
-async def morning(night: bool = False) -> dict:
+async def morning(night: bool = False, preview: bool = False) -> dict:
     """Morning (or goodnight) message: a verified literary quote with a short analysis of what it
     says about us, a dry comment tying it to the day, weather and what's pending."""
     from app.tools import orca, tasks
@@ -220,12 +220,20 @@ async def morning(night: bool = False) -> dict:
                 f"You are {settings.NAME}. {load_persona()}\nWrite the {moment}"
                 + (f" for {who}" if who else "") + f". {lang_rule}\n"
                 "Structure, in markdown:\n"
-                "1) The quote as a blockquote with author and work.\n"
+                + ("0) A personal opening line, as a butler who has been with the household for years would say "
+                   "it at bedtime (e.g. noting the hour, the day's weather or that the house is quiet).\n" if night else
+                   "0) A personal opening line, as a butler bringing the morning coffee would say it (e.g. "
+                   "'I trust you slept well, Sir', with a small observation about the morning).\n")
+                + "1) The quote as a blockquote with author and work.\n"
                 "2) **What it tells us** — 3-4 sentences of real analysis: what the line reveals about people, "
                 "work, time or ambition; the irony or tension inside it; why it still lands. Insightful, dry, "
                 "a little wry. No self-help, no clichés, no exclamation marks, no motivational emojis.\n"
                 "3) One dry line connecting it to the day (weather, the tasks).\n"
                 "4) The list of what's pending, concrete, only from the data given; if nothing, say so with grace.\n"
+                + ("5) A warm, personal sign-off wishing him a good rest (e.g. 'I do hope you rest well, Sir'), "
+                   "with genuine affection and one last touch of dry humour; sign as the butler.\n" if night else
+                   "5) A brief, warm send-off for the day (e.g. 'Do try to enjoy it, Sir'), with one dry touch.\n")
+                + "Warm and personal, never saccharine.\n"
                 "Never invent quotes, tasks or facts."},
             {"role": "user", "content":
                 f"QUOTE (verbatim, Spanish edition): {quote['text']} — {quote['author']}, {quote['work']}\n\n"
@@ -234,6 +242,8 @@ async def morning(night: bool = False) -> dict:
     except LLMError:
         text = f"> {quote['text']}\n— {quote['author']}, *{quote['work']}*\n\n" + "\n\n".join(facts)
     title = (db.t("Buenas noches", "Goodnight") if night else db.t("Buenos días", "Good morning"))
+    if preview:
+        return {"title": title, "body": text}
     return await notify.push("night" if night else "morning", title, text, {"quote": quote},
                              speak=strip_for_speech(text))
 
