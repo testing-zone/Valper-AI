@@ -78,6 +78,7 @@ class Settings:
     LOCAL_NEWS_HOUR = int(_env("LOCAL_NEWS_HOUR", "12"))
     JIRA_HOUR = int(_env("JIRA_HOUR", "8"))
     MORNING_HOUR = _env("MORNING_HOUR", "7")  # morning message: quote + today's tasks; empty = off
+    NIGHT_HOUR = _env("NIGHT_HOUR", "")  # optional goodnight message with tomorrow's plan
 
     # Jira (optional)
     JIRA_URL = _env("JIRA_URL").rstrip("/")
@@ -93,6 +94,10 @@ class Settings:
     CLAUDE_MODEL = _env("CLAUDE_MODEL")
     RESEARCH_TIMEOUT = int(_env("RESEARCH_TIMEOUT", "1800"))
     RESEARCH_TOOLS = _env("RESEARCH_TOOLS", "WebSearch,WebFetch,Read,Write")
+    # News gathered and cross-checked by Claude Code (falls back to RSS if it fails)
+    VERIFIED_NEWS = _env("VERIFIED_NEWS", "true").lower() == "true"
+    NEWS_MODEL = _env("NEWS_MODEL", "haiku")
+    NEWS_TIMEOUT = int(_env("NEWS_TIMEOUT", "600"))
     # Drop ANTHROPIC_API_KEY for the subprocess so Claude Code uses the claude.ai subscription
     CLAUDE_USE_SUBSCRIPTION = _env("CLAUDE_USE_SUBSCRIPTION", "true").lower() == "true"
 

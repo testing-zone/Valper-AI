@@ -172,3 +172,8 @@ def language() -> str:
 def voice_for(lang: str = None) -> str:
     prefs = get_prefs()
     return prefs[f"voice_{lang or prefs['language']}"]
+
+
+def t(es: str, en: str) -> str:
+    """Pick a user-facing string by the language preference (auto -> English titles)."""
+    return es if language() == "es" else en

@@ -1,6 +1,6 @@
 """Scheduled briefings: periodic digest, local news at noon, Jira pending work."""
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core import db
@@ -73,25 +73,39 @@ async def digest() -> dict:
         except Exception as e:
             logger.warning(f"Dollar failed: {e}")
 
-    # (category, label, headlines to consider, articles to read)
-    sections = [("local", settings.LOCATION_LABEL.upper(), 10, 4),
-                ("ia", "IA: MODELOS NUEVOS, HUGGING FACE, OPENAI, ETC.", 6, 4)]
-    sections += [(label, label.upper(), 6, 3) for label in news.EXTRA]
-    sections += [("nacional", "TITULARES NACIONALES", 6, 3), ("mundo", "TITULARES MUNDO", 4, 2)]
     counts = {}
-    for cat, label, n, to_read in sections:
-        items = await news.fresh_items(cat, limit_per_feed=n)
-        counts[cat] = len(items)
-        if not items:
-            continue
-        read = await articles.read_articles(items, cat, to_read)
-        rest = items[to_read:15]
-        block = articles.digest_block(read)
-        if rest:
-            block += "\nOTROS TITULARES:\n" + news.format_items(rest)
-        raw.append(f"== {label} ==\n{block}")
-        fallback.append(f"### {label.title()}\n" + news.format_items(items[:6]))
-    articles.prune()
+    verified_ok = False
+    if settings.VERIFIED_NEWS:
+        try:
+            from app.tools import verified_news
+            result = await verified_news.gather()
+            block = verified_news.to_digest_block(result)
+            if block:
+                raw.append("NEWS (gathered and cross-checked by Claude; keep the source links and any "
+                           "UNCONFIRMED flags):\n" + block)
+                counts = {s["name"]: len(s.get("items") or []) for s in result.get("sections", [])}
+                verified_ok = True
+        except Exception as e:
+            logger.warning(f"Verified news failed, falling back to RSS: {e}")
+    if not verified_ok:
+        # (category, label, headlines to consider, articles to read)
+        sections = [("local", settings.LOCATION_LABEL.upper(), 10, 4),
+                    ("ia", "IA: MODELOS NUEVOS, HUGGING FACE, OPENAI, ETC.", 6, 4)]
+        sections += [(label, label.upper(), 6, 3) for label in news.EXTRA]
+        sections += [("nacional", "TITULARES NACIONALES", 6, 3), ("mundo", "TITULARES MUNDO", 4, 2)]
+        for cat, label, n, to_read in sections:
+            items = await news.fresh_items(cat, limit_per_feed=n)
+            counts[cat] = len(items)
+            if not items:
+                continue
+            read = await articles.read_articles(items, cat, to_read)
+            rest = items[to_read:15]
+            block = articles.digest_block(read)
+            if rest:
+                block += "\nOTROS TITULARES:\n" + news.format_items(rest)
+            raw.append(f"== {label} ==\n{block}")
+            fallback.append(f"### {label.title()}\n" + news.format_items(items[:6]))
+        articles.prune()
 
     pending = db.query("SELECT text, due_at FROM reminders WHERE done = 0 ORDER BY due_at LIMIT 5")
     if pending:
@@ -105,7 +119,7 @@ async def digest() -> dict:
         "[fuente](url). Cierra con **Pendientes** si hay.",
         "\n\n".join(raw), "\n\n".join(fallback) or "Sin novedades.")
     speech = await _spoken(body)
-    title = f"Boletín {_now().strftime('%H:%M')}"
+    title = db.t("Boletín", "Briefing") + f" {_now().strftime('%H:%M')}"
     return await notify.push("digest", title, body, counts, speak=speech or None)
 
 
@@ -113,13 +127,14 @@ async def local_news() -> dict:
     """Noon briefing: important local news."""
     items = await news.fresh_items("local", limit_per_feed=15)
     if not items:
-        return await notify.push("local", f"Noticias {settings.LOCATION_LABEL}", "No encontré noticias nuevas hoy.")
+        return await notify.push("local", db.t("Noticias", "News") + f" · {settings.LOCATION_LABEL}",
+                                 db.t("No encontré noticias nuevas hoy.", "No new local news today."))
     body = await _summarize(
         f"Resume las noticias más importantes de hoy en {settings.LOCATION_LABEL} (orden público, movilidad, servicios, "
         "clima, economía local, eventos). Agrupa por ciudad, máximo 8 en total, 1-2 líneas cada una.",
         news.format_items(items), news.format_items(items[:10]))
     speech = await _spoken(body)
-    return await notify.push("local", f"Noticias {settings.LOCATION_LABEL}", body, {"count": len(items)},
+    return await notify.push("local", db.t("Noticias", "News") + f" · {settings.LOCATION_LABEL}", body, {"count": len(items)},
                              speak=speech or None)
 
 
@@ -129,13 +144,13 @@ async def jira_briefing() -> dict:
     data = await jira.jira_pending()
     issues = data.get("issues", [])
     if not issues:
-        return await notify.push("jira", "Jira", "No tienes tickets pendientes. 🎉")
+        return await notify.push("jira", "Jira", db.t("No tienes tickets pendientes.", "No pending tickets."))
     raw = "\n".join(f"- [{i['key']}]({i['url']}) {i['summary']} | {i['status']} | prioridad {i['priority']} "
                     f"| vence {i['due'] or 'sin fecha'}" for i in issues)
     body = await _summarize(
         f"Hoy es {_now().strftime('%Y-%m-%d')}. Dime qué tengo pendiente en Jira: primero lo vencido o que vence "
         "pronto, luego lo de mayor prioridad. Sé directo, tipo 'oye, te está faltando esto'.", raw, raw)
-    return await notify.push("jira", "Pendientes en Jira", body, {"count": len(issues)})
+    return await notify.push("jira", db.t("Pendientes en Jira", "Jira backlog"), body, {"count": len(issues)})
 
 
 def _pick_quote() -> dict:
@@ -157,28 +172,30 @@ def _pick_quote() -> dict:
     return quote
 
 
-async def morning() -> dict:
-    """Morning message: a literary quote with a dry comment, weather, and what's on today."""
+async def morning(night: bool = False) -> dict:
+    """Morning (or goodnight) message: a verified literary quote with a short analysis of what it
+    says about us, a dry comment tying it to the day, weather and what's pending."""
     from app.tools import orca, tasks
     from app.tools.reminders import list_reminders
     quote = _pick_quote()
     facts = []
     try:
-        facts.append("CLIMA HOY:\n" + weather.format_weather(await weather.get_weather()))
+        facts.append(db.t("CLIMA (hoy y mañana):\n", "WEATHER (today and tomorrow):\n")
+                     + weather.format_weather(await weather.get_weather()))
     except Exception as e:
         logger.warning(f"Weather failed: {e}")
     open_tasks = tasks.open_tasks()
     if open_tasks:
-        facts.append("TAREAS PENDIENTES:\n" + "\n".join(
-            f"- {t['text']}" + (f" (para {t['due']})" if t["due"] else "") for t in open_tasks))
-    today = _now().strftime("%Y-%m-%d")
-    rems = [r for r in (await list_reminders())["reminders"] if r["due_at"].startswith(today)]
+        facts.append("PENDING TASKS:\n" + "\n".join(
+            f"- {t['text']}" + (f" (due {t['due']})" if t["due"] else "") for t in open_tasks))
+    day = (_now() + timedelta(days=1 if night else 0)).strftime("%Y-%m-%d")
+    rems = [r for r in (await list_reminders())["reminders"] if r["due_at"].startswith(day)]
     if rems:
-        facts.append("RECORDATORIOS DE HOY:\n" + "\n".join(f"- {r['due_at'][11:16]} {r['text']}" for r in rems))
+        facts.append(f"REMINDERS FOR {day}:\n" + "\n".join(f"- {r['due_at'][11:16]} {r['text']}" for r in rems))
     if settings.jira_enabled:
         try:
             issues = (await jira.jira_pending()).get("issues", [])[:8]
-            facts.append("JIRA:\n" + "\n".join(f"- {i['key']} {i['summary']} (vence {i['due'] or '—'})" for i in issues))
+            facts.append("JIRA:\n" + "\n".join(f"- {i['key']} {i['summary']} (due {i['due'] or '—'})" for i in issues))
         except Exception as e:
             logger.warning(f"Jira failed: {e}")
     if orca.available() and await orca.is_running():
@@ -187,32 +204,42 @@ async def morning() -> dict:
             waiting = [a for w in (agents.get("worktrees") or {}).get("worktrees", []) for a in w.get("agents", [])
                        if orca._kind(a.get("state")) == "needs_you"]
             if waiting:
-                facts.append(f"AGENTES EN ORCA ESPERANDO RESPUESTA: {len(waiting)}")
+                facts.append(f"ORCA AGENTS WAITING FOR AN ANSWER: {len(waiting)}")
         except Exception:
             pass
 
-    en = db.language() == "en"
-    title_word = settings.USER_TITLE or ""
-    quote_block = f"> {quote['text']}\n— {quote['author']}, *{quote['work']}*"
+    en = db.language() != "es"
+    who = settings.USER_TITLE or ""
+    moment = ("goodnight message, to close the day (tomorrow's plan instead of today's)" if night
+              else "good-morning message, to start the day")
+    lang_rule = ("Write in English. Quote the passage in English, translated faithfully, and add "
+                 "'(trans.)' after the attribution." if en else "Escribe en español y cita textual.")
     try:
-        intro = await llm.complete([
+        text = await llm.complete([
             {"role": "system", "content":
-                f"Eres {settings.NAME}. {load_persona()}\nEscribes el mensaje de buenos días"
-                + (f" para {title_word}" if title_word else "") + ". "
-                + ("Write in English. " if en else "Escribe en español. ")
-                + "Estructura: 1) saludo de una línea; 2) UNA línea de comentario seco e ingenioso que conecte la "
-                  "cita con el día (clima, tareas). Nada cursi, nada de autoayuda, cero emojis motivacionales; "
-                  "humor sordo, como el de la cita. 3) La lista de lo que hay que hacer hoy, concreta, solo con "
-                  "los datos dados (si no hay tareas, dilo con gracia). NO repitas la cita, ya va aparte. "
-                  "No inventes tareas."},
-            {"role": "user", "content": f"CITA DE HOY: {quote['text']} ({quote['author']})\n\n" + "\n\n".join(facts)},
-        ], max_tokens=500, temperature=0.8)
+                f"You are {settings.NAME}. {load_persona()}\nWrite the {moment}"
+                + (f" for {who}" if who else "") + f". {lang_rule}\n"
+                "Structure, in markdown:\n"
+                "1) The quote as a blockquote with author and work.\n"
+                "2) **What it tells us** — 3-4 sentences of real analysis: what the line reveals about people, "
+                "work, time or ambition; the irony or tension inside it; why it still lands. Insightful, dry, "
+                "a little wry. No self-help, no clichés, no exclamation marks, no motivational emojis.\n"
+                "3) One dry line connecting it to the day (weather, the tasks).\n"
+                "4) The list of what's pending, concrete, only from the data given; if nothing, say so with grace.\n"
+                "Never invent quotes, tasks or facts."},
+            {"role": "user", "content":
+                f"QUOTE (verbatim, Spanish edition): {quote['text']} — {quote['author']}, {quote['work']}\n\n"
+                + "\n\n".join(facts)},
+        ], max_tokens=900, temperature=0.8)
     except LLMError:
-        intro = "\n\n".join(facts)
-    body = f"{quote_block}\n\n{intro}"
-    speech = f"{quote['text']} {quote['author']}. " + strip_for_speech(intro)
-    return await notify.push("morning", "Buenos días" if not en else "Good morning", body, {"quote": quote},
-                             speak=speech)
+        text = f"> {quote['text']}\n— {quote['author']}, *{quote['work']}*\n\n" + "\n\n".join(facts)
+    title = (db.t("Buenas noches", "Goodnight") if night else db.t("Buenos días", "Good morning"))
+    return await notify.push("night" if night else "morning", title, text, {"quote": quote},
+                             speak=strip_for_speech(text))
+
+
+async def night() -> dict:
+    return await morning(night=True)
 
 
 def strip_for_speech(text: str) -> str:
@@ -225,11 +252,13 @@ async def fire_reminders():
     for r in due_reminders():
         who = f"{settings.USER_TITLE}, " if settings.USER_TITLE else ""
         intro = f"{who}a reminder: " if db.language() == "en" else f"{who}le recuerdo: "
-        await notify.push("reminder", "Recordatorio", r["text"], {"reminder_id": r["id"]}, speak=intro + r["text"])
+        await notify.push("reminder", db.t("Recordatorio", "Reminder"), r["text"], {"reminder_id": r["id"]},
+                          speak=intro + r["text"])
 
 
 JOBS = {
     "morning": morning,
+    "night": night,
     "digest": digest,
     "local": local_news,
     "jira": jira_briefing,

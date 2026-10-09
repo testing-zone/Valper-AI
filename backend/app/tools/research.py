@@ -70,7 +70,7 @@ async def _run(job_id: int, prompt: str):
         )
         events.publish("research", {"id": job_id, "status": "done"})
         summary = report.strip().split("\n\n")[0][:400]
-        await notify.push("research", f"Investigación lista: {prompt[:60]}", summary,
+        await notify.push("research", db.t("Investigación lista", "Research ready") + f": {prompt[:60]}", summary,
                           {"research_id": job_id})
     except Exception as e:
         logger.error(f"Research job {job_id} failed: {e}")

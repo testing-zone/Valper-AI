@@ -184,24 +184,26 @@ async def watch():
 
 
 async def _alert(kind: str, w: dict, a: dict, en: bool, title_word: str, reminder: bool = False):
+    from app.core import db
     from app.tools import notify
     where = _where(w)
     task = (a.get("prompt") or a.get("taskTitle") or "").strip().replace("\n", " ")[:140]
     agent = a.get("agentType") or "agent"
     if kind == "finished":
-        title = f"Orca · {agent} terminó en {where}"
+        title = f"Orca · {agent} " + db.t(f"terminó en {where}", f"finished in {where}")
         result = (a.get("lastAssistantMessage") or "").strip()[:900]
-        body = f"**Tarea:** {task}\n\n{result}" if task else result
+        body = f"**{db.t('Tarea', 'Task')}:** {task}\n\n{result}" if task else result
         speak = (f"{title_word}the {agent} agent in {where} has finished." if en
                  else f"{title_word}el agente de {where} terminó.")
     elif kind == "needs_you":
-        title = f"Orca · {agent} te necesita en {where}" + (" (sigue esperando)" if reminder else "")
+        title = (f"Orca · {agent} " + db.t(f"te necesita en {where}", f"needs you in {where}")
+                 + (db.t(" (sigue esperando)", " (still waiting)") if reminder else ""))
         screen = (w.get("preview") or "").strip()[-600:]
         body = f"**Tarea:** {task}\n\n```\n{screen}\n```" if screen else f"**Tarea:** {task}"
         speak = (f"{title_word}the agent in {where} is waiting for you." if en
                  else f"{title_word}el agente de {where} lo está esperando.")
     else:
-        title = f"Orca · {agent} falló en {where}"
+        title = f"Orca · {agent} " + db.t(f"falló en {where}", f"failed in {where}")
         body = f"**Tarea:** {task}\n\nEstado: {a.get('state')}"
         speak = (f"{title_word}the agent in {where} failed." if en
                  else f"{title_word}el agente de {where} falló.")
@@ -280,6 +282,66 @@ async def _auto_trust(handle: str, timeout: int = 30):
 
 LEVELS = {"off": 0, "plan": 1, "edit": 2}
 
+# Extra places an agent may use besides its worktree (package caches only, never config or secrets)
+TOOL_CACHES = ["~/.npm", "~/.claude/plans"]  # plan mode writes its plan file there
+NETWORK = ["github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com",
+           "registry.npmjs.org", "pypi.org", "files.pythonhosted.org"]
+SECRETS = ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/id_rsa*", "**/.netrc"]
+
+
+def _confinement(allowed: list) -> list:
+    """Deny every path in the home folder that isn't one of `allowed` or on the way to one.
+
+    Claude Code deny rules can't be carved out with allow rules, so instead of "deny ~ except X"
+    we walk down from ~ and deny each sibling that doesn't lead to an allowed path."""
+    home = _Path.home().resolve()
+    allowed = [_Path(p).expanduser().resolve() for p in allowed]
+    denied = []
+
+    def walk(directory: _Path):
+        for child in sorted(directory.iterdir()):
+            child_r = child.resolve() if not child.is_symlink() else child
+            if any(child_r == a for a in allowed):
+                continue  # fully allowed subtree
+            if any(a.is_relative_to(child_r) for a in allowed):
+                walk(child_r)  # an ancestor of an allowed path: go one level down
+            else:
+                denied.append(child_r)
+
+    walk(home)
+    return denied
+
+
+def agent_settings(worktree: str, repo: str, name: str) -> str:
+    """Write a per-agent Claude Code settings file confining it to its worktree."""
+    git_dir = str(_Path(repo) / ".git")  # worktrees write their metadata into the main repo's .git
+    allowed = [worktree, git_dir] + TOOL_CACHES
+    denied = _confinement(allowed)
+    rules = []
+    for d in denied:
+        pattern = f"//{str(d).lstrip('/')}" + ("/**" if d.is_dir() else "")
+        rules += [f"Read({pattern})", f"Edit({pattern})", f"Write({pattern})"]
+    rules += [f"Read({p})" for p in SECRETS] + [f"Edit({p})" for p in SECRETS]
+    settings_json = {
+        "permissions": {"deny": rules, "defaultMode": None},
+        "sandbox": {
+            "enabled": True,
+            "failIfUnavailable": True,
+            "allowUnsandboxedCommands": False,
+            "autoAllowBashIfSandboxed": False,
+            "filesystem": {
+                "denyRead": [str(d) + ("/**" if d.is_dir() else "") for d in denied] + SECRETS,
+                "allowWrite": [worktree, git_dir] + [str(_Path(c).expanduser()) for c in TOOL_CACHES],
+            },
+            "network": {"allowedDomains": NETWORK},
+        },
+    }
+    settings_json["permissions"].pop("defaultMode")
+    out = settings.DATA_DIR / "agent-settings" / f"{name}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(settings_json, indent=1))
+    return str(out)
+
 
 async def orca_delegate(project: str, task: str, mode: str = "plan", confirmed: bool = False) -> dict:
     allowed = settings.ORCA_DELEGATE if settings.ORCA_DELEGATE in LEVELS else "off"
@@ -307,8 +369,11 @@ async def orca_delegate(project: str, task: str, mode: str = "plan", confirmed: 
     name = f"talos-{slug}-{_time.strftime('%m%d-%H%M')}"
     wt = (await run("worktree", "create", "--repo", f"path:{path}", "--name", name)).get("worktree", {})
     prompt = task.strip() + GUARDRAILS
+    # confine the agent to its worktree: no reads/writes elsewhere in ~, sandboxed shell, limited network
+    confinement = agent_settings(wt["path"], path, name)
     term = (await run("terminal", "create", "--worktree", f"path:{wt['path']}", "--title", f"talos · {mode}",
-                      "--command", f"claude {MODES[mode]} {_shlex.quote(prompt)}")).get("terminal", {})
+                      "--command", f"cd {_shlex.quote(wt['path'])} && claude {MODES[mode]} "
+                                   f"--settings {_shlex.quote(confinement)} {_shlex.quote(prompt)}")).get("terminal", {})
     asyncio.create_task(_auto_trust(term["handle"]))
     return {"ok": True, "project": project, "worktree": wt.get("displayName"), "branch": wt.get("branch"),
             "mode": mode, "terminal": term.get("handle"),

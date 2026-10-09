@@ -20,6 +20,9 @@ def start():
     if settings.MORNING_HOUR:
         scheduler.add_job(briefings.morning, CronTrigger(hour=int(settings.MORNING_HOUR), minute=0),
                           id="morning", **common)
+    if settings.NIGHT_HOUR:
+        scheduler.add_job(briefings.night, CronTrigger(hour=int(settings.NIGHT_HOUR), minute=0),
+                          id="night", **common)
     scheduler.add_job(briefings.local_news, CronTrigger(hour=settings.LOCAL_NEWS_HOUR, minute=0),
                       id="local", **common)
     if settings.jira_enabled:
@@ -27,7 +30,7 @@ def start():
                           id="jira", **common)
     from app.tools import orca
     if settings.ORCA_WATCH and orca.available():
-        scheduler.add_job(orca.watch, IntervalTrigger(seconds=45), id="orca", max_instances=1, coalesce=True)
+        scheduler.add_job(orca.watch, IntervalTrigger(seconds=20), id="orca", max_instances=1, coalesce=True)
     scheduler.add_job(briefings.fire_reminders, IntervalTrigger(seconds=30), id="reminders",
                       max_instances=1, coalesce=True)
     scheduler.start()
