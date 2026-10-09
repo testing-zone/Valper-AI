@@ -126,6 +126,31 @@ async def voices():
     return {"voices": tts_service.get_available_voices() if tts_service else []}
 
 
+class QuietRequest(BaseModel):
+    minutes: Optional[int] = 60  # 0 = back to normal, -1 = until told otherwise
+
+
+@router.get("/quiet")
+async def quiet_status():
+    from app.tools import quiet
+    return quiet.status()
+
+
+@router.post("/quiet")
+async def set_quiet(req: QuietRequest):
+    from app.tools import notify, quiet
+    if req.minutes:
+        await notify.stop_speaking()
+    return quiet.set_quiet(req.minutes if req.minutes != -1 else None)
+
+
+@router.post("/stop")
+async def stop_audio():
+    from app.tools import notify
+    await notify.stop_speaking()
+    return {"stopped": True}
+
+
 @router.get("/prefs")
 async def get_prefs():
     return db.get_prefs()

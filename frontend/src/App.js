@@ -50,6 +50,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState('');
+  const [quiet, setQuiet] = useState({ quiet: false });
 
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -72,6 +73,7 @@ function App() {
     api('/identity').then((d) => { setName(d.name); setIdentity(d); }).catch(() => setName('ASISTENTE'));
     api('/voices').then((d) => setVoices(d.voices)).catch(() => {});
     api('/prefs').then(setPrefs).catch(() => {});
+    api('/quiet').then(setQuiet).catch(() => {});
     loadMessages(); loadFeed(); loadJobs(); loadStatus();
     const t = setInterval(loadStatus, 15000);
     return () => clearInterval(t);
@@ -104,6 +106,11 @@ function App() {
     }
   }, []);
 
+  const setQuietFor = async (minutes) => {
+    try { setQuiet(await api('/quiet', { method: 'POST', body: { minutes } })); } catch (e) { setError(e.message); }
+  };
+  const stopEverything = () => { stopAudio(); api('/stop', { method: 'POST' }).catch(() => {}); };
+
   const updatePrefs = async (changes) => {
     setPrefs((p) => ({ ...p, ...changes }));
     try { setPrefs(await api('/prefs', { method: 'PUT', body: changes })); loadStatus(); }
@@ -121,6 +128,11 @@ function App() {
       if (item.speak && autoVoiceRef.current) speak(item.speech || `${item.title}. ${item.body}`);
     });
     es.addEventListener('research', () => loadJobs());
+    es.addEventListener('quiet', (e) => setQuiet(JSON.parse(e.data)));
+    es.addEventListener('stop_audio', () => {
+      if (audioRef.current) { audioRef.current.stop(); audioRef.current = null; }
+      setIsPlaying(false);
+    });
     return () => es.close();
   }, [speak]);
 
@@ -138,7 +150,7 @@ function App() {
     if (result.tools?.some((t) => t.name === 'deep_research')) loadJobs();
     if (result.tools?.some((t) => t.name.includes('reminder'))) setRemindersVersion((v) => v + 1);
     loadStatus();
-    if (autoVoice) speak(result.assistant_text);
+    if (autoVoice && !quiet.quiet) speak(result.assistant_text);
   };
 
   const sendText = async () => {
@@ -319,6 +331,23 @@ function App() {
                 ))}
               </div>
             </div>
+            <div className="panel-row">
+              <label className="panel-label">SILENCIO</label>
+              <div className="segmented">
+                {[[30, '30M'], [60, '1H'], [120, '2H'], [-1, '∞']].map(([m, label]) => (
+                  <button key={m} onClick={() => setQuietFor(m)}>{label}</button>
+                ))}
+                <button className="stop-btn" onClick={stopEverything} title="Parar lo que está diciendo">■ STOP</button>
+              </div>
+            </div>
+            {quiet.quiet && (
+              <div className="quiet-banner">
+                🔇 {quiet.reason === 'manual'
+                  ? (quiet.until === 'forever' ? 'SILENCIADO HASTA NUEVO AVISO' : `SILENCIADO HASTA ${quiet.until.slice(11, 16)}`)
+                  : quiet.reason === 'quiet_hours' ? `HORARIO DE SILENCIO (${quiet.quiet_hours})` : 'MICRÓFONO EN USO'}
+                {quiet.reason === 'manual' && <button className="link-button" onClick={() => setQuietFor(0)}>REANUDAR</button>}
+              </div>
+            )}
             <label className="switch">
               <input type="checkbox" checked={autoVoice} onChange={(e) => setAutoVoice(e.target.checked)} />
               <span className="switch-track"><span className="switch-knob" /></span>

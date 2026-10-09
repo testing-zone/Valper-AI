@@ -113,6 +113,8 @@ class Settings:
     # Notifications
     NOTIFY_MACOS = _env("NOTIFY_MACOS", "true").lower() == "true"
     SPEAK_ON_MAC = _env("SPEAK_ON_MAC", "true").lower() == "true"
+    QUIET_HOURS = _env("QUIET_HOURS")  # e.g. "22-7": no talking out loud in that window
+    AUTO_QUIET_ON_MIC = _env("AUTO_QUIET_ON_MIC", "false").lower() == "true"  # silent while mic is in use
 
     # Discord (optional): DMs with briefings/alerts, and chat with the assistant from anywhere
     DISCORD_BOT_TOKEN = _env("DISCORD_BOT_TOKEN")

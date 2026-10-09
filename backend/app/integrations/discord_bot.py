@@ -103,8 +103,37 @@ async def _reply_audio(text: str) -> Optional[str]:
         return None
 
 
+COMMAND = __import__("re").compile(
+    r"^\s*(stop|shh+|silence|silencio|c[aá]llate|quiet|mute|unmute|speak|habla)\s*(\d+)?\s*(m|min|h|hr|hours?)?\s*$",
+    __import__("re").I)
+
+
+async def _command(message) -> bool:
+    """quiet/mute [N m|h], unmute, stop — handled instantly, no LLM."""
+    from app.tools import notify, quiet
+    m = COMMAND.match(message.content or "")
+    if not m:
+        return False
+    word, num, unit = m.group(1).lower(), m.group(2), (m.group(3) or "m").lower()
+    if word in ("unmute", "speak", "habla"):
+        quiet.set_quiet(0)
+        await message.channel.send("Voice restored, Sir.")
+    elif word == "stop":
+        await notify.stop_speaking()
+        await message.channel.send("Stopped.")
+    else:
+        minutes = int(num) * (60 if unit.startswith("h") else 1) if num else 60
+        await notify.stop_speaking()
+        st = quiet.set_quiet(minutes)
+        await message.channel.send(f"Silent until {st['until'][11:16]}, Sir. You'll still get everything in writing. "
+                                   "Say `unmute` to have me speak again.")
+    return True
+
+
 async def _handle(message):
     from app import agent
+    if await _command(message):
+        return
     text = message.content.strip()
     voice_in = False
     audio = next((a for a in message.attachments

@@ -452,3 +452,10 @@ pre.error { white-space: pre-wrap; color: var(--red); }
 @media (prefers-reduced-motion: reduce) {
   .crt-overlay, .lamp, .aperture *, .cursor, .badge, .prompt-sigil { animation: none !important; }
 }
+
+.App .segmented .stop-btn { color: var(--red); border-color: var(--red); margin-left: 6px; border-right-width: 1px; }
+.App .segmented .stop-btn:hover:not(:disabled) { background: var(--red); color: #fff; }
+.quiet-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 0.62rem; letter-spacing: 0.2em; color: var(--cyan); border: 1px dashed var(--cyan-dim); padding: 6px 8px;
+}

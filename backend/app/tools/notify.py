@@ -20,6 +20,16 @@ FFMPEG_FX = {
 }
 
 _speak_lock = asyncio.Lock()
+_player = None  # current afplay process, so it can be stopped
+
+
+async def stop_speaking():
+    """Stop whatever is being said right now (Mac speakers and any open browser tab)."""
+    global _player
+    if _player and _player.returncode is None:
+        _player.terminate()
+    _player = None
+    events.publish("stop_audio", {})
 
 
 async def render_speech(text: str) -> Optional[str]:
@@ -42,15 +52,19 @@ async def render_speech(text: str) -> Optional[str]:
 
 async def speak_on_mac(text: str = None, path: str = None):
     """Play speech through the Mac speakers (one at a time)."""
-    if not settings.SPEAK_ON_MAC or platform.system() != "Darwin":
+    global _player
+    from app.tools import quiet
+    if not settings.SPEAK_ON_MAC or platform.system() != "Darwin" or quiet.is_quiet():
         return
     path = path or await render_speech(text)
     if not path:
         return
     async with _speak_lock:  # never talk over itself
         try:
-            proc = await asyncio.create_subprocess_exec("afplay", path)
-            await proc.wait()
+            if quiet.is_quiet():  # muted while waiting for the previous message
+                return
+            _player = await asyncio.create_subprocess_exec("afplay", path)
+            await _player.wait()
         except Exception as e:
             logger.warning(f"Speaking on Mac failed: {e}")
 
@@ -59,7 +73,9 @@ async def macos_notification(title: str, message: str):
     if not settings.NOTIFY_MACOS or platform.system() != "Darwin":
         return
     esc = lambda s: s.replace("\\", "\\\\").replace('"', '\\"')[:240]
-    script = f'display notification "{esc(message)}" with title "{esc(title)}" sound name "Glass"'
+    from app.tools import quiet
+    sound = "" if quiet.is_quiet() else ' sound name "Glass"'
+    script = f'display notification "{esc(message)}" with title "{esc(title)}"{sound}'
     try:
         proc = await asyncio.create_subprocess_exec("osascript", "-e", script)
         await proc.wait()
@@ -71,7 +87,9 @@ async def push(kind: str, title: str, body: str, data: dict = None, speak: str =
     """Deliver something to the user: feed + live UI event + macOS notification + Discord DM,
     and say `speak` out loud (Mac speakers, and as an audio attachment on Discord)."""
     item = db.add_feed(kind, title, body, data)
-    events.publish("feed", {**item, "speak": bool(speak) and not settings.SPEAK_ON_MAC, "speech": speak})
+    from app.tools import quiet
+    events.publish("feed", {**item, "speak": bool(speak) and not settings.SPEAK_ON_MAC and not quiet.is_quiet(),
+                            "speech": speak})
     await macos_notification(f"{settings.NAME} · {title}", body.replace("*", "").split("\n")[0])
     asyncio.create_task(_deliver(title, body, speak))
     return item
