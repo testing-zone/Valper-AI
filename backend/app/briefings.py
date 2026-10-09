@@ -138,6 +138,88 @@ async def jira_briefing() -> dict:
     return await notify.push("jira", "Pendientes en Jira", body, {"count": len(issues)})
 
 
+def _pick_quote() -> dict:
+    """Random verified quote, not repeated within the last 30 mornings. data/quotes.md overrides the default."""
+    import random
+    from pathlib import Path
+    path = settings.DATA_DIR / "quotes.md"
+    if not path.exists():
+        path = Path(__file__).parent / "content" / "quotes.md"
+    quotes = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) == 3 and not line.startswith("#"):
+            quotes.append({"text": parts[0], "author": parts[1], "work": parts[2]})
+    used = db.get_prefs().get("quotes_used", [])
+    fresh = [q for q in quotes if q["text"] not in used] or quotes
+    quote = random.choice(fresh)
+    db.set_prefs({"quotes_used": (used + [quote["text"]])[-30:]})
+    return quote
+
+
+async def morning() -> dict:
+    """Morning message: a literary quote with a dry comment, weather, and what's on today."""
+    from app.tools import orca, tasks
+    from app.tools.reminders import list_reminders
+    quote = _pick_quote()
+    facts = []
+    try:
+        facts.append("CLIMA HOY:\n" + weather.format_weather(await weather.get_weather()))
+    except Exception as e:
+        logger.warning(f"Weather failed: {e}")
+    open_tasks = tasks.open_tasks()
+    if open_tasks:
+        facts.append("TAREAS PENDIENTES:\n" + "\n".join(
+            f"- {t['text']}" + (f" (para {t['due']})" if t["due"] else "") for t in open_tasks))
+    today = _now().strftime("%Y-%m-%d")
+    rems = [r for r in (await list_reminders())["reminders"] if r["due_at"].startswith(today)]
+    if rems:
+        facts.append("RECORDATORIOS DE HOY:\n" + "\n".join(f"- {r['due_at'][11:16]} {r['text']}" for r in rems))
+    if settings.jira_enabled:
+        try:
+            issues = (await jira.jira_pending()).get("issues", [])[:8]
+            facts.append("JIRA:\n" + "\n".join(f"- {i['key']} {i['summary']} (vence {i['due'] or '—'})" for i in issues))
+        except Exception as e:
+            logger.warning(f"Jira failed: {e}")
+    if orca.available() and await orca.is_running():
+        try:
+            agents = await orca.orca_agents()
+            waiting = [a for w in (agents.get("worktrees") or {}).get("worktrees", []) for a in w.get("agents", [])
+                       if orca._kind(a.get("state")) == "needs_you"]
+            if waiting:
+                facts.append(f"AGENTES EN ORCA ESPERANDO RESPUESTA: {len(waiting)}")
+        except Exception:
+            pass
+
+    en = db.language() == "en"
+    title_word = settings.USER_TITLE or ""
+    quote_block = f"> {quote['text']}\n— {quote['author']}, *{quote['work']}*"
+    try:
+        intro = await llm.complete([
+            {"role": "system", "content":
+                f"Eres {settings.NAME}. {load_persona()}\nEscribes el mensaje de buenos días"
+                + (f" para {title_word}" if title_word else "") + ". "
+                + ("Write in English. " if en else "Escribe en español. ")
+                + "Estructura: 1) saludo de una línea; 2) UNA línea de comentario seco e ingenioso que conecte la "
+                  "cita con el día (clima, tareas). Nada cursi, nada de autoayuda, cero emojis motivacionales; "
+                  "humor sordo, como el de la cita. 3) La lista de lo que hay que hacer hoy, concreta, solo con "
+                  "los datos dados (si no hay tareas, dilo con gracia). NO repitas la cita, ya va aparte. "
+                  "No inventes tareas."},
+            {"role": "user", "content": f"CITA DE HOY: {quote['text']} ({quote['author']})\n\n" + "\n\n".join(facts)},
+        ], max_tokens=500, temperature=0.8)
+    except LLMError:
+        intro = "\n\n".join(facts)
+    body = f"{quote_block}\n\n{intro}"
+    speech = f"{quote['text']} {quote['author']}. " + strip_for_speech(intro)
+    return await notify.push("morning", "Buenos días" if not en else "Good morning", body, {"quote": quote},
+                             speak=speech)
+
+
+def strip_for_speech(text: str) -> str:
+    from app.services.tts_service import clean_for_speech
+    return clean_for_speech(text)[:900]
+
+
 async def fire_reminders():
     from app.tools.reminders import due_reminders
     for r in due_reminders():
@@ -147,6 +229,7 @@ async def fire_reminders():
 
 
 JOBS = {
+    "morning": morning,
     "digest": digest,
     "local": local_news,
     "jira": jira_briefing,

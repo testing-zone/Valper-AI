@@ -77,6 +77,7 @@ class Settings:
     DIGEST_HOURS = _env("DIGEST_HOURS", "6,9,12,15,18,21")
     LOCAL_NEWS_HOUR = int(_env("LOCAL_NEWS_HOUR", "12"))
     JIRA_HOUR = int(_env("JIRA_HOUR", "8"))
+    MORNING_HOUR = _env("MORNING_HOUR", "7")  # morning message: quote + today's tasks; empty = off
 
     # Jira (optional)
     JIRA_URL = _env("JIRA_URL").rstrip("/")
@@ -98,6 +99,11 @@ class Settings:
     # Orca (Stably AI) coding-agent orchestrator; empty = auto-detect the CLI inside Orca.app
     ORCA_BIN = _env("ORCA_BIN")
     ORCA_WATCH = _env("ORCA_WATCH", "true").lower() == "true"  # alert when agents finish / need you
+    # Project names you use when talking -> paths: "Mi web=~/projects/web;Otro=~/code/otro".
+    # This is an allowlist: agents can only be delegated work in these folders.
+    PROJECTS = _env("PROJECTS")
+    # Highest delegation level: off (watch only) | plan (read-only analysis) | edit (may change files)
+    ORCA_DELEGATE = _env("ORCA_DELEGATE", "off")
 
     # Notifications
     NOTIFY_MACOS = _env("NOTIFY_MACOS", "true").lower() == "true"

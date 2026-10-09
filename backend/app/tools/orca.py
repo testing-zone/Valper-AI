@@ -151,6 +151,16 @@ async def watch():
     now = time.time()
     seen = set()
     for w in data.get("worktrees", []):
+        preview = w.get("preview") or ""
+        if not w.get("agents") and "Enter to confirm" in preview:
+            # e.g. Claude's trust/bypass screens: Orca doesn't list the agent yet
+            key = f"screen:{w.get('worktreeId')}"
+            seen.add(key)
+            if key not in _last:
+                _last[key] = ("needs_you", now, False, None)
+                if _primed:
+                    await _alert("needs_you", w, {"agentType": "claude", "prompt": ""}, en, title_word)
+            continue
         for a in w.get("agents") or []:
             key = a.get("paneKey") or f"{w.get('worktreeId')}:{a.get('agentType')}"
             seen.add(key)
@@ -196,3 +206,168 @@ async def _alert(kind: str, w: dict, a: dict, en: bool, title_word: str, reminde
         speak = (f"{title_word}the agent in {where} failed." if en
                  else f"{title_word}el agente de {where} falló.")
     await notify.push("orca", title, body, {"worktree": w.get("worktreeId"), "state": a.get("state")}, speak=speak)
+
+
+# ---- delegation: give Orca agents work, and answer them -----------------------
+
+import re as _re
+import shlex as _shlex
+import time as _time
+from pathlib import Path as _Path
+
+TRUST_PROMPT = "trust this folder"
+CONFIRM_SCREENS = ("trust this folder", "Do you want to", "Yes, I accept", "Enter to confirm")
+MODES = {
+    # read-only analysis: explore and propose, never edits or runs risky commands
+    "plan": "--permission-mode plan",
+    # makes changes: edits files freely, still asks before running shell commands
+    "edit": "--permission-mode acceptEdits",
+}
+GUARDRAILS = (
+    "\n\nReglas: trabajas en un worktree aislado en su propia rama. No hagas push, no despliegues, "
+    "no toques archivos .env ni secretos. Al terminar resume en pocas líneas: qué hiciste, qué archivos, "
+    "y cómo probarlo."
+)
+
+
+def _aliases() -> dict:
+    """PROJECTS="Tu Casa Linda=~/projects/tu-casa-linda;Talos=~/Talos" -> {name: path}"""
+    out = {}
+    for item in filter(None, (p.strip() for p in settings.PROJECTS.split(";"))):
+        name, _, path = item.partition("=")
+        out[name.strip().lower()] = str(_Path(path.strip()).expanduser())
+    return out
+
+
+def _norm(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    return _re.sub(r"[^a-z0-9]+", " ", s).strip()
+
+
+async def orca_projects() -> dict:
+    return {"allowed_projects": _aliases(), "max_mode": settings.ORCA_DELEGATE}
+
+
+async def _resolve(project: str):
+    """Only allowlisted projects (PROJECTS in .env) can receive work."""
+    want = _norm(project)
+    for name, path in _aliases().items():
+        if want and (want in _norm(name) or _norm(name) in want):
+            return path
+    return None
+
+
+async def _auto_trust(handle: str, timeout: int = 30):
+    """Accept Claude's 'trust this folder' screen for a worktree Talos just created."""
+    deadline = _time.monotonic() + timeout
+    while _time.monotonic() < deadline:
+        await asyncio.sleep(2)
+        try:
+            screen = "\n".join((await run("terminal", "read", "--terminal", handle, "--screen"))
+                               .get("terminal", {}).get("tail", []))
+        except Exception:
+            continue
+        if TRUST_PROMPT in screen:
+            await run("terminal", "send", "--terminal", handle, "--text", "\x1b[B")
+            await asyncio.sleep(1)
+            await run("terminal", "send", "--terminal", handle, "--text", "", "--enter")
+            return True
+        if "plan mode" in screen or "accept edits" in screen or "Percolating" in screen:
+            return False  # already running
+    return False
+
+
+LEVELS = {"off": 0, "plan": 1, "edit": 2}
+
+
+async def orca_delegate(project: str, task: str, mode: str = "plan", confirmed: bool = False) -> dict:
+    allowed = settings.ORCA_DELEGATE if settings.ORCA_DELEGATE in LEVELS else "off"
+    mode = mode if mode in MODES else "plan"
+    if LEVELS[allowed] == 0:
+        return {"error": "Delegar trabajo a agentes está desactivado (ORCA_DELEGATE=off)."}
+    if LEVELS[mode] > LEVELS[allowed]:
+        return {"error": f"Solo tengo permitido el modo '{allowed}'. Para que un agente modifique archivos, "
+                         "el usuario debe poner ORCA_DELEGATE=edit en .env."}
+    if mode == "edit" and not confirmed:
+        return {"needs_confirmation": True,
+                "message": f"Antes de lanzarlo, pide confirmación explícita: un agente va a MODIFICAR archivos en "
+                           f"'{project}' para: {task[:200]}. Solo vuelve a llamar con confirmed=true si el "
+                           "usuario responde que sí en su próximo mensaje."}
+    if not await is_running():
+        return {"error": "Orca está cerrado. Ábrelo para poder delegar."}
+    path = await _resolve(project)
+    if not path:
+        return {"error": f"'{project}' no está en la lista de proyectos permitidos (PROJECTS en .env).",
+                "allowed": list(_aliases())}
+    if not _Path(path).exists():
+        return {"error": f"La ruta {path} no existe en este Mac."}
+    await run("repo", "add", "--path", path)  # idempotent
+    slug = "-".join(_norm(task).split()[:4]) or "tarea"
+    name = f"talos-{slug}-{_time.strftime('%m%d-%H%M')}"
+    wt = (await run("worktree", "create", "--repo", f"path:{path}", "--name", name)).get("worktree", {})
+    prompt = task.strip() + GUARDRAILS
+    term = (await run("terminal", "create", "--worktree", f"path:{wt['path']}", "--title", f"talos · {mode}",
+                      "--command", f"claude {MODES[mode]} {_shlex.quote(prompt)}")).get("terminal", {})
+    asyncio.create_task(_auto_trust(term["handle"]))
+    return {"ok": True, "project": project, "worktree": wt.get("displayName"), "branch": wt.get("branch"),
+            "mode": mode, "terminal": term.get("handle"),
+            "note": "Te aviso cuando termine o si necesita algo."}
+
+
+async def orca_reply(text: str, worktree: str = "") -> dict:
+    """Send text to an agent: the one in `worktree`, or the one that's waiting for you."""
+    if not await is_running():
+        return {"error": "Orca está cerrado."}
+    terms = (await run("terminal", "list")).get("terminals", [])
+    target = None
+    if worktree:
+        want = _norm(worktree)
+        target = next((t for t in terms if want in _norm(t.get("worktreePath", "") + " " + (t.get("title") or ""))), None)
+    if not target:
+        waiting = [t for t in terms if any(k in (t.get("preview") or "") for k in CONFIRM_SCREENS + ("?",))]
+        target = max(waiting or terms, key=lambda t: t.get("lastOutputAt") or 0, default=None)
+    if not target:
+        return {"error": "No encontré ningún agente activo."}
+    await run("terminal", "send", "--terminal", target["handle"], "--text", text, "--enter")
+    return {"ok": True, "sent_to": target.get("worktreePath"), "text": text}
+
+
+TOOLS += [
+    {
+        "name": "orca_delegate",
+        "description": "Pone a un agente de código (Claude Code en Orca) a trabajar en un proyecto, en un worktree "
+                       "aislado. mode='plan' (por defecto) solo analiza y propone sin tocar nada; mode='edit' hace "
+                       "cambios (pide permiso antes de ejecutar comandos). Usa 'edit' solo si el usuario pide "
+                       "explícitamente implementar/cambiar algo. Escribe la tarea completa y concreta.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Nombre del proyecto, p. ej. 'Tu Casa Linda'"},
+                "task": {"type": "string", "description": "Qué debe hacer el agente, con todo el contexto"},
+                "mode": {"type": "string", "enum": ["plan", "edit"]},
+                "confirmed": {"type": "boolean", "description": "Solo true si el usuario confirmó explícitamente "
+                                                               "un cambio en modo edit"},
+            },
+            "required": ["project", "task"],
+        },
+        "handler": orca_delegate,
+    },
+    {
+        "name": "orca_reply",
+        "description": "Le responde a un agente de Orca que está esperando (o al del worktree indicado): "
+                       "'dile que sí', 'dile que use X'.",
+        "parameters": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}, "worktree": {"type": "string"}},
+            "required": ["text"],
+        },
+        "handler": orca_reply,
+    },
+    {
+        "name": "orca_projects",
+        "description": "Lista los proyectos en los que se permite delegar trabajo.",
+        "parameters": {"type": "object", "properties": {}},
+        "handler": orca_projects,
+    },
+]

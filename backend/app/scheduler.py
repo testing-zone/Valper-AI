@@ -17,6 +17,9 @@ def start():
     common = {"misfire_grace_time": 900, "coalesce": True, "max_instances": 1}
     scheduler.add_job(briefings.digest, CronTrigger(hour=settings.DIGEST_HOURS, minute=0),
                       id="digest", **common)
+    if settings.MORNING_HOUR:
+        scheduler.add_job(briefings.morning, CronTrigger(hour=int(settings.MORNING_HOUR), minute=0),
+                          id="morning", **common)
     scheduler.add_job(briefings.local_news, CronTrigger(hour=settings.LOCAL_NEWS_HOUR, minute=0),
                       id="local", **common)
     if settings.jira_enabled:
