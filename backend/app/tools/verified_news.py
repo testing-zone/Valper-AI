@@ -41,7 +41,7 @@ def _sections() -> list:
                                 "Prefer official announcements and model pages. 3-5 items."},
     ]
     for label, queries in news.EXTRA.items():
-        out.append({"name": label, "brief": f"{label}: " + "; ".join(queries) + ". 2-3 items."})
+        out.append({"name": label, "brief": f"{label}: " + "; ".join(queries) + ". 2-3 items.", "hours": 72})
     out.append({"name": "National", "brief": f"Top national headlines for country {settings.NEWS_EDITION.split(':')[-1]}. 3 items."})
     return out
 
@@ -52,22 +52,7 @@ def _already_reported(limit: int = 60) -> list:
     return [r["title"] for r in rows]
 
 
-async def gather(hours: int = 24) -> dict:
-    """Ask Claude Haiku for verified news. Returns {"sections": [...]} or raises."""
-    from app.tools.research import claude_available
-    if not claude_available():
-        raise RuntimeError("claude CLI not available")
-    spec = {
-        "sections": [{"name": "<section>", "items": [{
-            "headline": "short, factual", "summary": "2-3 sentences with the concrete facts (numbers, names)",
-            "date": "YYYY-MM-DD", "verified": True,
-            "sources": [{"outlet": "name", "url": "https://..."}]}]}]}
-    prompt = (
-        f"Find the news from the last {hours} hours for each section below. Skip anything already reported:\n"
-        + "\n".join(f"- {h}" for h in _already_reported()) + "\n\nSECTIONS:\n"
-        + "\n".join(f"- {s['name']}: {s['brief']}" for s in _sections())
-        + "\n\nReturn ONLY JSON exactly in this shape:\n" + json.dumps(spec)
-    )
+async def _ask_claude(prompt: str) -> dict:
     cmd = [settings.CLAUDE_BIN, "-p", prompt, "--model", settings.NEWS_MODEL, "--output-format", "json",
            "--allowedTools", "WebSearch,WebFetch", "--append-system-prompt", SYSTEM]
     env = dict(os.environ)
@@ -78,18 +63,52 @@ async def gather(hours: int = 24) -> dict:
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=workdir, env=env,
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=settings.NEWS_TIMEOUT)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=settings.NEWS_TIMEOUT)
     except asyncio.TimeoutError:
         proc.kill()
         raise RuntimeError("verified news timed out")
     data = json.loads(out.decode())
     if data.get("is_error"):
         raise RuntimeError(str(data.get("result"))[:300])
-    text = data.get("result", "")
-    match = re.search(r"\{.*\}", text, re.S)
+    match = re.search(r"\{.*\}", data.get("result", ""), re.S)
     if not match:
         raise RuntimeError("no JSON in Claude's answer")
-    result = json.loads(match.group(0))
+    return json.loads(match.group(0))
+
+
+async def _section(section: dict, hours: int, already: list) -> dict:
+    spec = {"name": section["name"], "items": [{
+        "headline": "short, factual", "summary": "2-3 sentences with the concrete facts (numbers, names)",
+        "date": "YYYY-MM-DD", "verified": True, "sources": [{"outlet": "name", "url": "https://..."}]}]}
+    prompt = (
+        f"Section: {section['name']}. Find the news from the last {hours} hours: {section['brief']}\n"
+        + ("Skip anything already reported:\n" + "\n".join(f"- {h}" for h in already) + "\n" if already else "")
+        + "Return ONLY JSON exactly in this shape:\n" + json.dumps(spec))
+    try:
+        result = await _ask_claude(prompt)
+        result["name"] = section["name"]
+        return result
+    except Exception as e:
+        logger.warning(f"Verified news section '{section['name']}' failed: {e}")
+        return {"name": section["name"], "items": [], "error": str(e)}
+
+
+async def gather(hours: int = 24) -> dict:
+    """Ask Claude Haiku for verified news, one focused search per section, in parallel."""
+    from app.tools.research import claude_available
+    if not claude_available():
+        raise RuntimeError("claude CLI not available")
+    already = _already_reported()
+    sem = asyncio.Semaphore(3)
+
+    async def guarded(section):
+        async with sem:
+            return await _section(section, section.get("hours", hours), already)
+
+    sections = await asyncio.gather(*[guarded(s) for s in _sections()])
+    if all(s.get("error") for s in sections):
+        raise RuntimeError(sections[0]["error"])
+    result = {"sections": list(sections)}
     _store(result)
     return result
 
