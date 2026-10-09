@@ -22,6 +22,9 @@ def start():
     if settings.jira_enabled:
         scheduler.add_job(briefings.jira_briefing, CronTrigger(day_of_week="mon-fri", hour=settings.JIRA_HOUR),
                           id="jira", **common)
+    from app.tools import orca
+    if settings.ORCA_WATCH and orca.available():
+        scheduler.add_job(orca.watch, IntervalTrigger(seconds=45), id="orca", max_instances=1, coalesce=True)
     scheduler.add_job(briefings.fire_reminders, IntervalTrigger(seconds=30), id="reminders",
                       max_instances=1, coalesce=True)
     scheduler.start()

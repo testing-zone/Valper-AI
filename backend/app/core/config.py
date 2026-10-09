@@ -97,6 +97,7 @@ class Settings:
 
     # Orca (Stably AI) coding-agent orchestrator; empty = auto-detect the CLI inside Orca.app
     ORCA_BIN = _env("ORCA_BIN")
+    ORCA_WATCH = _env("ORCA_WATCH", "true").lower() == "true"  # alert when agents finish / need you
 
     # Notifications
     NOTIFY_MACOS = _env("NOTIFY_MACOS", "true").lower() == "true"

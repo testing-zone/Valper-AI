@@ -16,7 +16,11 @@ APP_CLI = "/Applications/Orca.app/Contents/Resources/bin/orca"
 
 
 def cli() -> str:
-    return settings.ORCA_BIN or shutil.which("orca") or APP_CLI
+    # prefer the CLI inside the app bundle: the /usr/local/bin/orca symlink can be broken after updates
+    if settings.ORCA_BIN:
+        return settings.ORCA_BIN
+    import os
+    return APP_CLI if os.path.exists(APP_CLI) else (shutil.which("orca") or APP_CLI)
 
 
 def available() -> bool:
@@ -36,9 +40,15 @@ async def run(*args: str, timeout: int = 20):
     if proc.returncode != 0 and not text:
         raise RuntimeError(err.decode(errors="ignore").strip()[-400:] or f"exit {proc.returncode}")
     try:
-        return json.loads(text)
+        data = json.loads(text)
     except json.JSONDecodeError:
         return {"text": text[-4000:]}
+    # every orca command answers {"id", "ok", "result": {...}}
+    if isinstance(data, dict) and "result" in data:
+        if data.get("ok") is False:
+            raise RuntimeError(str(data.get("error"))[:400])
+        return data["result"]
+    return data
 
 
 async def is_running() -> bool:
@@ -46,7 +56,9 @@ async def is_running() -> bool:
         status = await run("status", timeout=10)
     except Exception:
         return False
-    return bool(status.get("runtimeReachable") or status.get("appRunning")) if isinstance(status, dict) else False
+    if not isinstance(status, dict):
+        return False
+    return bool((status.get("runtime") or {}).get("reachable") or status.get("runtimeReachable"))
 
 
 async def orca_agents(limit: int = 20) -> dict:
@@ -92,3 +104,95 @@ TOOLS = [
         "handler": orca_terminal_output,
     },
 ]
+
+
+# ---- watcher: alert when an agent finishes, needs you, or fails ---------------
+
+NEEDS_YOU = ("blocked", "waiting", "permission", "awaiting")
+FINISHED = ("done", "idle")
+FAILED = ("error", "failed", "interrupted")
+REMIND_AFTER = 15 * 60
+
+_last: dict = {}  # paneKey -> (kind, since_ts, reminded, episode)
+_primed = False
+
+
+def _kind(state: str) -> str:
+    s = (state or "").lower()
+    if any(k in s for k in NEEDS_YOU):
+        return "needs_you"
+    if any(k in s for k in FAILED):
+        return "failed"
+    if any(k in s for k in FINISHED):
+        return "finished"
+    return "working"
+
+
+def _where(w: dict) -> str:
+    name = w.get("displayName") or w.get("branch", "").replace("refs/heads/", "")
+    return f"{w.get('repo')}/{name}" if name and name != w.get("repo", "").lower() else str(w.get("repo"))
+
+
+async def watch():
+    """Scheduler job. First run only records current states, so old agents don't spam."""
+    global _primed
+    import time
+    from app.core import db
+
+    if not available() or not await is_running():
+        return
+    try:
+        data = await run("worktree", "ps", "--limit", "50")
+    except Exception as e:
+        logger.debug(f"orca watch failed: {e}")
+        return
+    en = db.language() == "en"
+    title_word = f"{settings.USER_TITLE}, " if settings.USER_TITLE else ""
+    now = time.time()
+    seen = set()
+    for w in data.get("worktrees", []):
+        for a in w.get("agents") or []:
+            key = a.get("paneKey") or f"{w.get('worktreeId')}:{a.get('agentType')}"
+            seen.add(key)
+            kind = _kind(a.get("state"))
+            # stateStartedAt changes on every new episode, so a task that went working -> done
+            # between two polls still counts as a new completion
+            episode = a.get("stateStartedAt") or (a.get("mainAgent") or {}).get("stateStartedAt")
+            prev = _last.get(key)
+            if prev and prev[0] == kind and prev[3] == episode:
+                if kind == "needs_you" and not prev[2] and now - prev[1] > REMIND_AFTER:
+                    _last[key] = (kind, prev[1], True, episode)
+                    await _alert("needs_you", w, a, en, title_word, reminder=True)
+                continue
+            _last[key] = (kind, now, False, episode)
+            if _primed and kind != "working":
+                await _alert(kind, w, a, en, title_word)
+    for key in list(_last):
+        if key not in seen:
+            _last.pop(key)
+    _primed = True
+
+
+async def _alert(kind: str, w: dict, a: dict, en: bool, title_word: str, reminder: bool = False):
+    from app.tools import notify
+    where = _where(w)
+    task = (a.get("prompt") or a.get("taskTitle") or "").strip().replace("\n", " ")[:140]
+    agent = a.get("agentType") or "agent"
+    if kind == "finished":
+        title = f"Orca · {agent} terminó en {where}"
+        result = (a.get("lastAssistantMessage") or "").strip()[:900]
+        body = f"**Tarea:** {task}\n\n{result}" if task else result
+        speak = (f"{title_word}the {agent} agent in {where} has finished." if en
+                 else f"{title_word}el agente de {where} terminó.")
+    elif kind == "needs_you":
+        title = f"Orca · {agent} te necesita en {where}" + (" (sigue esperando)" if reminder else "")
+        screen = (w.get("preview") or "").strip()[-600:]
+        body = f"**Tarea:** {task}\n\n```\n{screen}\n```" if screen else f"**Tarea:** {task}"
+        speak = (f"{title_word}the agent in {where} is waiting for you." if en
+                 else f"{title_word}el agente de {where} lo está esperando.")
+    else:
+        title = f"Orca · {agent} falló en {where}"
+        body = f"**Tarea:** {task}\n\nEstado: {a.get('state')}"
+        speak = (f"{title_word}the agent in {where} failed." if en
+                 else f"{title_word}el agente de {where} falló.")
+    await notify.push("orca", title, body, {"worktree": w.get("worktreeId"), "state": a.get("state")}, speak=speak)

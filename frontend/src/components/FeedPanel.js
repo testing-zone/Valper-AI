@@ -4,7 +4,7 @@ import { api, formatDate } from '../api';
 
 const KIND = {
   digest: 'BOLETÍN', local: 'LOCAL', jira: 'JIRA',
-  reminder: 'RECORDATORIO', research: 'INVESTIGACIÓN',
+  reminder: 'RECORDATORIO', research: 'INVESTIGACIÓN', orca: 'ORCA',
 };
 
 export default function FeedPanel({ location, items, onSpeak, onOpenResearch }) {
