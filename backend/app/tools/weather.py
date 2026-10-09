@@ -29,7 +29,10 @@ async def get_weather(city: str = "") -> dict:
             try:
                 out[name] = await _fetch_city(client, lat, lon)
             except Exception as e:
-                out[name] = {"error": str(e)[:200]}
+                try:  # Open-Meteo has intermittent 5xx; fall back to MET Norway
+                    out[name] = await _fetch_met_no(client, lat, lon)
+                except Exception as e2:
+                    out[name] = {"error": f"{str(e)[:120]} / met.no: {str(e2)[:80]}"}
     return out
 
 
@@ -62,6 +65,52 @@ async def _fetch_city(client: httpx.AsyncClient, lat: float, lon: float, attempt
     }
 
 
+MET_SYMBOLS = {"clearsky": "despejado", "fair": "mayormente despejado", "partlycloudy": "parcialmente nublado",
+               "cloudy": "nublado", "fog": "niebla", "lightrain": "lluvia ligera", "rain": "lluvia",
+               "heavyrain": "lluvia fuerte", "lightrainshowers": "chubascos ligeros", "rainshowers": "chubascos",
+               "heavyrainshowers": "chubascos fuertes", "rainandthunder": "tormenta",
+               "rainshowersandthunder": "chubascos con tormenta"}
+
+
+async def _fetch_met_no(client: httpx.AsyncClient, lat: float, lon: float) -> dict:
+    """Backup provider: MET Norway locationforecast (free, requires an identifying User-Agent)."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    r = await client.get("https://api.met.no/weatherapi/locationforecast/2.0/compact",
+                         params={"lat": round(lat, 4), "lon": round(lon, 4)},
+                         headers={"User-Agent": "personal-assistant/1.0 github.com/testing-zone/Valper-AI"})
+    r.raise_for_status()
+    series = r.json()["properties"]["timeseries"]
+    tz = ZoneInfo(settings.TIMEZONE)
+    now = series[0]
+    symbol = (now["data"].get("next_1_hours") or now["data"].get("next_6_hours") or {}).get("summary", {}) \
+        .get("symbol_code", "").split("_")[0]
+    today = datetime.now(tz).date()
+
+    def day_stats(day):
+        temps, rain = [], 0.0
+        for p in series:
+            t = datetime.fromisoformat(p["time"].replace("Z", "+00:00")).astimezone(tz)
+            if t.date() == day:
+                temps.append(p["data"]["instant"]["details"]["air_temperature"])
+                rain += (p["data"].get("next_1_hours") or {}).get("details", {}).get("precipitation_amount", 0)
+        return (min(temps), max(temps), round(rain, 1)) if temps else (None, None, 0)
+
+    tmin, tmax, rain = day_stats(today)
+    t2min, t2max, rain2 = day_stats(today + timedelta(days=1))
+    details = now["data"]["instant"]["details"]
+    return {
+        "temperatura": details["air_temperature"],
+        "sensacion": details["air_temperature"],
+        "humedad": details.get("relative_humidity"),
+        "estado": MET_SYMBOLS.get(symbol, symbol or "—"),
+        "max_hoy": tmax, "min_hoy": tmin,
+        "prob_lluvia_hoy": f"{rain} mm",
+        "manana": f"{t2min}–{t2max}°C, lluvia {rain2} mm",
+        "fuente": "met.no",
+    }
+
+
 def format_weather(data: dict) -> str:
     lines = []
     for name, w in data.items():
@@ -71,7 +120,7 @@ def format_weather(data: dict) -> str:
         lines.append(
             f"**{name}**: {w['temperatura']}°C ({w['estado']}), sensación {w['sensacion']}°C, "
             f"humedad {w['humedad']}%. Hoy {w['min_hoy']}–{w['max_hoy']}°C, "
-            f"lluvia {w['prob_lluvia_hoy']}%. Mañana {w['manana']}."
+            f"lluvia {w['prob_lluvia_hoy']}{'' if 'mm' in str(w['prob_lluvia_hoy']) else '%'}. Mañana {w['manana']}."
         )
     return "\n".join(lines)
 
