@@ -43,6 +43,7 @@ async def _fetch_city(client: httpx.AsyncClient, lat: float, lon: float, attempt
                 "latitude": lat, "longitude": lon, "timezone": settings.TIMEZONE, "forecast_days": 2,
                 "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,precipitation",
                 "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code",
+                "hourly": "temperature_2m,precipitation_probability,weather_code",
             })
             r.raise_for_status()
             break
@@ -52,7 +53,9 @@ async def _fetch_city(client: httpx.AsyncClient, lat: float, lon: float, attempt
             await asyncio.sleep(3 * (attempt + 1))
     d = r.json()
     cur, day = d["current"], d["daily"]
+    rest = _rest_of_day(d.get("hourly") or {}, cur["time"])
     return {
+        "resto_del_dia": rest,
         "temperatura": cur["temperature_2m"],
         "sensacion": cur["apparent_temperature"],
         "humedad": cur["relative_humidity_2m"],
@@ -63,6 +66,32 @@ async def _fetch_city(client: httpx.AsyncClient, lat: float, lon: float, attempt
         "manana": f"{day['temperature_2m_min'][1]}–{day['temperature_2m_max'][1]}°C, "
                   f"{WMO.get(day['weather_code'][1], '')}, lluvia {day['precipitation_probability_max'][1]}%",
     }
+
+
+def _rest_of_day(hourly: dict, now_iso: str) -> str:
+    """'tarde: 24–28°C, lluvia 80% (15–17h); noche: 21–23°C, lluvia 40%' from the hourly forecast."""
+    if not hourly.get("time"):
+        return ""
+    today, now_h = now_iso[:10], int(now_iso[11:13])
+    blocks = [("mañana", 6, 12), ("tarde", 12, 18), ("noche", 18, 24)]
+    parts = []
+    for name, start, end in blocks:
+        if end <= now_h:
+            continue
+        rows = [(int(t[11:13]), temp, prob, code) for t, temp, prob, code in
+                zip(hourly["time"], hourly["temperature_2m"], hourly["precipitation_probability"], hourly["weather_code"])
+                if t.startswith(today) and max(start, now_h) <= int(t[11:13]) < end]
+        if not rows:
+            continue
+        temps = [r[1] for r in rows]
+        probs = [r[2] or 0 for r in rows]
+        top = max(probs)
+        rainy = [r[0] for r in rows if (r[2] or 0) >= max(50, top - 10)]
+        window = f" ({min(rainy)}–{max(rainy) + 1}h)" if rainy and top >= 40 else ""
+        worst = max(rows, key=lambda r: r[3])[3]
+        parts.append(f"{name}: {min(temps):.0f}–{max(temps):.0f}°C, {WMO.get(worst, 'variable')}, "
+                     f"lluvia {top}%{window}")
+    return "; ".join(parts)
 
 
 MET_SYMBOLS = {"clearsky": "despejado", "fair": "mayormente despejado", "partlycloudy": "parcialmente nublado",
@@ -120,7 +149,9 @@ def format_weather(data: dict) -> str:
         lines.append(
             f"**{name}**: {w['temperatura']}°C ({w['estado']}), sensación {w['sensacion']}°C, "
             f"humedad {w['humedad']}%. Hoy {w['min_hoy']}–{w['max_hoy']}°C, "
-            f"lluvia {w['prob_lluvia_hoy']}{'' if 'mm' in str(w['prob_lluvia_hoy']) else '%'}. Mañana {w['manana']}."
+            f"lluvia {w['prob_lluvia_hoy']}{'' if 'mm' in str(w['prob_lluvia_hoy']) else '%'}."
+            + (f" Resto del día — {w['resto_del_dia']}." if w.get("resto_del_dia") else "")
+            + f" Mañana {w['manana']}."
         )
     return "\n".join(lines)
 

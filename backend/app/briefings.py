@@ -27,8 +27,10 @@ async def _spoken(body: str) -> str:
             {"role": "system", "content":
                 f"You are {settings.NAME}, a personal assistant.{title} {load_persona()}\n"
                 + ("Speak in English. " if en else "Habla en español. ")
-                + "Turn this briefing into a spoken summary of max 7 short sentences: the substance of the "
-                  "news (what happened, numbers, names), most important first. No markdown, no URLs."},
+                + _clock_note() + " "
+                + "Turn this briefing into a spoken summary of max 7 short sentences: start with the weather for "
+                  "the rest of the day if present, then the substance of the news (what happened, numbers, "
+                  "names), most important first. No markdown, no URLs."},
             {"role": "user", "content": body},
         ], model=settings.LLM_MODEL_FAST, max_tokens=350, temperature=0.5)
     except LLMError:
@@ -41,7 +43,7 @@ async def _summarize(instruction: str, raw: str, fallback: str) -> str:
     lang = " Write the whole briefing in ENGLISH (translate headlines)." if db.language() == "en" else ""
     try:
         return await llm.complete([
-            {"role": "system", "content": f"Eres {settings.NAME}, asistente personal. {STYLE}{lang}"},
+            {"role": "system", "content": f"Eres {settings.NAME}, asistente personal. {STYLE}{lang} {_clock_note()}"},
             {"role": "user", "content": f"{instruction}\n\nDATOS:\n{raw}"},
         ], model=settings.LLM_MODEL_FAST, max_tokens=1200, temperature=0.3)
     except LLMError as e:
@@ -51,6 +53,19 @@ async def _summarize(instruction: str, raw: str, fallback: str) -> str:
 
 def _now():
     return datetime.now(ZoneInfo(settings.TIMEZONE))
+
+
+def _daypart() -> str:
+    h = _now().hour
+    return "morning" if 5 <= h < 12 else "afternoon" if h < 18 else "evening" if h < 22 else "night"
+
+
+def _clock_note() -> str:
+    """Tell the model what time it is, so greetings fit (no 'sleep well' at noon)."""
+    part = _daypart()
+    return (f"It is {_now().strftime('%A %H:%M')} — {part}. Any greeting must fit the {part}; "
+            + ("you may wish him a good rest." if part == "night" else
+               "do NOT mention sleeping, resting or bedtime, and don't say good morning unless it is morning."))
 
 
 async def digest() -> dict:
@@ -124,17 +139,36 @@ async def digest() -> dict:
 
 
 async def local_news() -> dict:
-    """Noon briefing: important local news."""
-    items = await news.fresh_items("local", limit_per_feed=15)
-    if not items:
+    """Noon briefing: weather for the rest of the day + verified local news."""
+    raw = []
+    try:
+        raw.append("WEATHER (now, rest of today, tomorrow):\n" + weather.format_weather(await weather.get_weather()))
+    except Exception as e:
+        logger.warning(f"Weather failed: {e}")
+    items_block = ""
+    if settings.VERIFIED_NEWS:
+        try:
+            from app.tools import verified_news
+            section = await verified_news._section(verified_news._sections()[0], 24, verified_news._already_reported())
+            verified_news._store({"sections": [section]})
+            items_block = verified_news.to_digest_block({"sections": [section]})
+        except Exception as e:
+            logger.warning(f"Verified local news failed: {e}")
+    if not items_block:
+        items = await news.fresh_items("local", limit_per_feed=15)
+        items_block = news.format_items(items)
+    if items_block:
+        raw.append(f"LOCAL NEWS ({settings.LOCATION_LABEL}):\n{items_block}")
+    if not raw:
         return await notify.push("local", db.t("Noticias", "News") + f" · {settings.LOCATION_LABEL}",
                                  db.t("No encontré noticias nuevas hoy.", "No new local news today."))
     body = await _summarize(
-        f"Resume las noticias más importantes de hoy en {settings.LOCATION_LABEL} (orden público, movilidad, servicios, "
-        "clima, economía local, eventos). Agrupa por ciudad, máximo 8 en total, 1-2 líneas cada una.",
-        news.format_items(items), news.format_items(items[:10]))
+        f"Midday briefing for {settings.LOCATION_LABEL}: first **Weather** — what the rest of the day looks like "
+        "(afternoon and evening: rain, timing, temperatures), one line per city; then **Local news** — max 6 items, "
+        "1-2 lines each with the concrete facts and the source link; keep UNCONFIRMED flags.",
+        "\n\n".join(raw), "\n\n".join(raw))
     speech = await _spoken(body)
-    return await notify.push("local", db.t("Noticias", "News") + f" · {settings.LOCATION_LABEL}", body, {"count": len(items)},
+    return await notify.push("local", db.t("Mediodía", "Midday") + f" · {settings.LOCATION_LABEL}", body, {},
                              speak=speech or None)
 
 

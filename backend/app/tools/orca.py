@@ -227,8 +227,11 @@ MODES = {
 }
 GUARDRAILS = (
     "\n\nReglas: trabajas en un worktree aislado en su propia rama. No hagas push, no despliegues, "
-    "no toques archivos .env ni secretos. Al terminar resume en pocas líneas: qué hiciste, qué archivos, "
-    "y cómo probarlo."
+    "no toques archivos .env ni secretos. Trabaja con autonomía: edita, instala, compila y prueba sin pedir "
+    "permiso. PERO detente y pregunta (y espera la respuesta) antes de: borrar archivos; cambiar el esquema "
+    "de la base de datos o migraciones; tocar autenticación, seguridad o pagos; agregar o quitar dependencias; "
+    "cambiar configuración de despliegue, CI o variables de entorno; un cambio que toque más de 10 archivos; "
+    "o cualquier cosa irreversible. Al terminar resume en pocas líneas: qué hiciste, qué archivos, y cómo probarlo."
 )
 
 
@@ -328,7 +331,9 @@ def agent_settings(worktree: str, repo: str, name: str) -> str:
             "enabled": True,
             "failIfUnavailable": True,
             "allowUnsandboxedCommands": False,
-            "autoAllowBashIfSandboxed": False,
+            # routine commands run without asking: they can only write inside the worktree and reach
+            # the allowlisted hosts; anything that would escape the sandbox is refused
+            "autoAllowBashIfSandboxed": True,
             "filesystem": {
                 "denyRead": [str(d) + ("/**" if d.is_dir() else "") for d in denied] + SECRETS,
                 "allowWrite": [worktree, git_dir] + [str(_Path(c).expanduser()) for c in TOOL_CACHES],
@@ -343,7 +348,7 @@ def agent_settings(worktree: str, repo: str, name: str) -> str:
     return str(out)
 
 
-async def orca_delegate(project: str, task: str, mode: str = "plan", confirmed: bool = False) -> dict:
+async def orca_delegate(project: str, task: str, mode: str = "plan") -> dict:
     allowed = settings.ORCA_DELEGATE if settings.ORCA_DELEGATE in LEVELS else "off"
     mode = mode if mode in MODES else "plan"
     if LEVELS[allowed] == 0:
@@ -351,11 +356,6 @@ async def orca_delegate(project: str, task: str, mode: str = "plan", confirmed: 
     if LEVELS[mode] > LEVELS[allowed]:
         return {"error": f"Solo tengo permitido el modo '{allowed}'. Para que un agente modifique archivos, "
                          "el usuario debe poner ORCA_DELEGATE=edit en .env."}
-    if mode == "edit" and not confirmed:
-        return {"needs_confirmation": True,
-                "message": f"Antes de lanzarlo, pide confirmación explícita: un agente va a MODIFICAR archivos en "
-                           f"'{project}' para: {task[:200]}. Solo vuelve a llamar con confirmed=true si el "
-                           "usuario responde que sí en su próximo mensaje."}
     if not await is_running():
         return {"error": "Orca está cerrado. Ábrelo para poder delegar."}
     path = await _resolve(project)
@@ -401,18 +401,17 @@ async def orca_reply(text: str, worktree: str = "") -> dict:
 TOOLS += [
     {
         "name": "orca_delegate",
-        "description": "Pone a un agente de código (Claude Code en Orca) a trabajar en un proyecto, en un worktree "
-                       "aislado. mode='plan' (por defecto) solo analiza y propone sin tocar nada; mode='edit' hace "
-                       "cambios (pide permiso antes de ejecutar comandos). Usa 'edit' solo si el usuario pide "
-                       "explícitamente implementar/cambiar algo. Escribe la tarea completa y concreta.",
+        "description": "Pone a un agente de código (Claude Code en Orca) a trabajar en un proyecto, encerrado en un "
+                       "worktree aislado. mode='plan' (por defecto) solo analiza y propone; mode='edit' implementa "
+                       "cambios con autonomía y solo pregunta lo importante (borrar, migraciones, auth, dependencias, "
+                       "despliegue). Usa 'edit' cuando el usuario pida directamente implementar/cambiar/arreglar "
+                       "algo. Escribe la tarea completa y concreta.",
         "parameters": {
             "type": "object",
             "properties": {
                 "project": {"type": "string", "description": "Nombre del proyecto, p. ej. 'Tu Casa Linda'"},
                 "task": {"type": "string", "description": "Qué debe hacer el agente, con todo el contexto"},
                 "mode": {"type": "string", "enum": ["plan", "edit"]},
-                "confirmed": {"type": "boolean", "description": "Solo true si el usuario confirmó explícitamente "
-                                                               "un cambio en modo edit"},
             },
             "required": ["project", "task"],
         },
