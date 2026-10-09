@@ -33,6 +33,9 @@ setup() {
   "$VENV/bin/pip" install -q --upgrade pip
   "$VENV/bin/pip" install -q -r "$ROOT/backend/requirements.txt"
 
+  echo "==> Native audio player (media keys: ⏯ pauses Talos)"
+  build_player || echo "   (skipped: Talos will use afplay, without media-key control)"
+
   echo "==> Frontend build"
   (cd "$ROOT/frontend" && npm install --no-audit --no-fund && npm run build)
 
@@ -42,6 +45,19 @@ setup() {
     echo "==> Created .env — add your TOTALGPT_API_KEY there"
   fi
   echo "==> Done. Run: ./scripts/talos.sh start"
+}
+
+build_player() {
+  command -v swiftc >/dev/null || return 1
+  mkdir -p "$ROOT/bin"
+  swiftc -O "$ROOT/native/TalosPlayer.swift" -o "$ROOT/bin/talos-player" 2>/dev/null && return 0
+  # Command Line Tools sometimes ship a duplicate SwiftBridging modulemap; hide it via a VFS overlay
+  local tmp; tmp=$(mktemp -d)
+  : > "$tmp/empty.modulemap"
+  printf '{"version":0,"case-sensitive":"false","roots":[{"type":"file","name":"%s","external-contents":"%s"}]}' \
+    "$(xcode-select -p)/usr/include/swift/bridging.modulemap" "$tmp/empty.modulemap" > "$tmp/overlay.yaml"
+  swiftc -O -vfsoverlay "$tmp/overlay.yaml" -Xcc -ivfsoverlay -Xcc "$tmp/overlay.yaml" \
+    "$ROOT/native/TalosPlayer.swift" -o "$ROOT/bin/talos-player"
 }
 
 start() {
@@ -94,5 +110,6 @@ case "$1" in
   install) install_service ;;
   uninstall) uninstall_service ;;
   logs) tail -f "$LOG_DIR/talos.log" ;;
+  build-player) build_player && echo "built $ROOT/bin/talos-player" ;;
   *) sed -n '2,9p' "$0" | sed 's/^# //'; exit 1 ;;
 esac

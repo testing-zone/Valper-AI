@@ -98,3 +98,6 @@ test_*.mp3
 # Valper runtime data (db, memory notes, research, audio)
 data/
 .env
+
+# compiled native helpers
+bin/

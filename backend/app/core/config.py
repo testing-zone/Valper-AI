@@ -113,6 +113,7 @@ class Settings:
     # Notifications
     NOTIFY_MACOS = _env("NOTIFY_MACOS", "true").lower() == "true"
     SPEAK_ON_MAC = _env("SPEAK_ON_MAC", "true").lower() == "true"
+    ROOT_PLAYER = str(ROOT_DIR / "bin" / "talos-player")  # built by scripts/talos.sh setup
     QUIET_HOURS = _env("QUIET_HOURS")  # e.g. "22-7": no talking out loud in that window
     AUTO_QUIET_ON_MIC = _env("AUTO_QUIET_ON_MIC", "false").lower() == "true"  # silent while mic is in use
 
