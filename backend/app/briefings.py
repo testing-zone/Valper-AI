@@ -163,8 +163,9 @@ def _pick_quote() -> dict:
     quotes = []
     for line in path.read_text(encoding="utf-8").splitlines():
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) == 3 and not line.startswith("#"):
-            quotes.append({"text": parts[0], "author": parts[1], "work": parts[2]})
+        if len(parts) >= 3 and not line.startswith("#"):
+            quotes.append({"text": parts[0], "author": parts[1], "work": parts[2],
+                           "about": parts[3] if len(parts) > 3 else ""})
     used = db.get_prefs().get("quotes_used", [])
     fresh = [q for q in quotes if q["text"] not in used] or quotes
     quote = random.choice(fresh)
@@ -225,6 +226,8 @@ async def morning(night: bool = False, preview: bool = False) -> dict:
                    "0) A personal opening line, as a butler bringing the morning coffee would say it (e.g. "
                    "'I trust you slept well, Sir', with a small observation about the morning).\n")
                 + "1) The quote as a blockquote with author and work.\n"
+                "1b) **The book** — one or two sentences on the work, taken ONLY from the verified summary "
+                "provided (translate it if needed; add nothing that isn't in it). Skip if none is given.\n"
                 "2) **What it tells us** — 3-4 sentences of real analysis: what the line reveals about people, "
                 "work, time or ambition; the irony or tension inside it; why it still lands. Insightful, dry, "
                 "a little wry. No self-help, no clichés, no exclamation marks, no motivational emojis.\n"
@@ -236,7 +239,8 @@ async def morning(night: bool = False, preview: bool = False) -> dict:
                 + "Warm and personal, never saccharine.\n"
                 "Never invent quotes, tasks or facts."},
             {"role": "user", "content":
-                f"QUOTE (verbatim, Spanish edition): {quote['text']} — {quote['author']}, {quote['work']}\n\n"
+                f"QUOTE (verbatim, Spanish edition): {quote['text']} — {quote['author']}, {quote['work']}\n"
+                + (f"VERIFIED SUMMARY OF THE WORK: {quote['about']}\n" if quote.get("about") else "") + "\n"
                 + "\n\n".join(facts)},
         ], max_tokens=900, temperature=0.8)
     except LLMError:
